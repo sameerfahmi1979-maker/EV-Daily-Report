@@ -1,0 +1,36 @@
+{
+  "name": "ocpp-server",
+  "version": "1.0.0",
+  "description": "OCPP 1.6J WebSocket Server for EV Charging Management",
+  "main": "dist/server.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "tsx watch src/server.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "ocpp",
+    "websocket",
+    "ev-charging",
+    "ocpp-1.6j"
+  ],
+  "dependencies": {
+    "@supabase/supabase-js": "^2.57.4",
+    "ws": "^8.18.0",
+    "winston": "^3.15.0",
+    "uuid": "^10.0.0",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/ws": "^8.5.13",
+    "@types/uuid": "^10.0.0",
+    "typescript": "^5.7.2",
+    "tsx": "^4.19.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
