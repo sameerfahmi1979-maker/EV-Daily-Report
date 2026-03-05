@@ -1,6 +1,5 @@
 import { useAuth } from '../contexts/AuthContext';
 import { useEffect, useState } from 'react';
-import { Zap, Database, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import { seedUserData, checkIfUserHasData } from '../lib/seedData';
 import { StationList } from './StationList';
 import { StationForm } from './StationForm';
@@ -16,6 +15,7 @@ import ImportPage from './ImportPage';
 import SessionList from './SessionList';
 import AnalyticsDashboard from './AnalyticsDashboard';
 import ExportPage from './ExportPage';
+import HomeDashboard from './HomeDashboard';
 import { Database as DatabaseType } from '../lib/database.types';
 import { Sidebar } from './Sidebar';
 type Station = DatabaseType['public']['Tables']['stations']['Row'];
@@ -145,164 +145,14 @@ export function Dashboard() {
       <main className="lg:ml-[280px] transition-all duration-300 min-h-screen">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pt-20 lg:pt-8">
         {currentView === 'home' && (
-          <>
-            <div className="mb-8">
-              <h2 className="text-3xl font-bold text-gray-900 mb-2">Welcome Back</h2>
-              <p className="text-gray-600">Manage your charging stations and billing operations</p>
-            </div>
-
-            {!loading && !hasData && (
-              <div className="mb-8 p-6 bg-green-50 border-2 border-green-200 rounded-xl">
-                <h4 className="font-semibold text-green-900 mb-3 flex items-center gap-2">
-                  <Database className="w-5 h-5" />
-                  Sample Data Available
-                </h4>
-                <p className="text-sm text-green-800 mb-4">
-                  Load sample stations, Jordan TOU rates, and fixed charges to test the system
-                </p>
-                {seedMessage && (
-                  <div className={`mb-4 p-3 rounded-lg flex items-start gap-2 ${
-                    seedMessage.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                  }`}>
-                    {seedMessage.type === 'success' ? (
-                      <CheckCircle className="w-5 h-5 flex-shrink-0" />
-                    ) : (
-                      <AlertCircle className="w-5 h-5 flex-shrink-0" />
-                    )}
-                    <span className="text-sm">{seedMessage.text}</span>
-                  </div>
-                )}
-                <button
-                  onClick={handleSeedData}
-                  disabled={seeding}
-                  className="w-full bg-green-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
-                >
-                  {seeding ? (
-                    <>
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      Loading Sample Data...
-                    </>
-                  ) : (
-                    <>
-                      <Database className="w-5 h-5" />
-                      Load Sample Data
-                    </>
-                  )}
-                </button>
-                <p className="text-xs text-green-700 mt-3">
-                  This will create: 3 stations, Jordan EDCO TOU rate structure with 5 periods, and 2 fixed charges
-                </p>
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
-                <h3 className="text-xl font-bold text-gray-900 mb-6">Phase 3: Station Management</h3>
-
-                <div className="space-y-4 mb-6">
-                  <div className="flex items-start gap-3">
-                    <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <svg className="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-gray-900">Station CRUD Operations</h4>
-                      <p className="text-sm text-gray-600">Full create, read, update, delete with RLS</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start gap-3">
-                    <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <svg className="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-gray-900">Search & Filter</h4>
-                      <p className="text-sm text-gray-600">Grid view with search capabilities</p>
-                    </div>
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => setCurrentView('stations')}
-                  className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 transition-colors"
-                >
-                  View Stations
-                </button>
-              </div>
-
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
-                <h3 className="text-xl font-bold text-gray-900 mb-6">Phase 4: Rate Configuration</h3>
-
-                <div className="space-y-4 mb-6">
-                  <div className="flex items-start gap-3">
-                    <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <svg className="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-gray-900">Rate Structure Management</h4>
-                      <p className="text-sm text-gray-600">Time-of-use rates with periods</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start gap-3">
-                    <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <svg className="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-gray-900">Visual 24-Hour Timeline</h4>
-                      <p className="text-sm text-gray-600">Color-coded period editor</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start gap-3">
-                    <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <svg className="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-gray-900">Jordan Templates</h4>
-                      <p className="text-sm text-gray-600">EDCO TOU & Flat Rate presets</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start gap-3">
-                    <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <svg className="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-gray-900">Fixed Charges</h4>
-                      <p className="text-sm text-gray-600">Connection & service fees</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    onClick={() => setCurrentView('rates')}
-                    className="bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 transition-colors"
-                  >
-                    View Rates
-                  </button>
-                  <button
-                    onClick={() => setCurrentView('fixed-charges')}
-                    className="bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 transition-colors"
-                  >
-                    View Charges
-                  </button>
-                </div>
-              </div>
-            </div>
-          </>
+          <HomeDashboard
+            onNavigate={setCurrentView}
+            hasData={hasData}
+            loading={loading}
+            onSeedData={handleSeedData}
+            seeding={seeding}
+            seedMessage={seedMessage}
+          />
         )}
 
         {currentView === 'stations' && (

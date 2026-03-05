@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Calendar } from 'lucide-react';
 import { format } from 'date-fns';
 import { DateRange, getDateRangePreset } from '../lib/analyticsService';
@@ -8,9 +8,37 @@ interface DateRangeSelectorProps {
   onChange: (dateRange: DateRange) => void;
 }
 
+function getPresetFromRange(dateRange: DateRange): string {
+  const start = dateRange.startDate.getTime();
+  const end = dateRange.endDate.getTime();
+  const now = Date.now();
+  const todayStart = new Date().setHours(0, 0, 0, 0);
+  const todayEnd = new Date().setHours(23, 59, 59, 999);
+  const yesterdayStart = todayStart - 86400000;
+  const yesterdayEnd = todayEnd - 86400000;
+  const last7Start = todayStart - 6 * 86400000;
+  const last30Start = todayStart - 29 * 86400000;
+  if (start >= todayStart && end >= todayEnd) return 'today';
+  if (start >= yesterdayStart && end <= yesterdayEnd) return 'yesterday';
+  if (start >= last7Start && end >= todayEnd) return 'last7days';
+  if (start >= last30Start && end >= todayEnd) return 'last30days';
+  const thisMonthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
+  if (start >= thisMonthStart && end >= todayEnd) return 'thisMonth';
+  const lastMonthStart = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).getTime();
+  const lastMonthEnd = new Date(new Date().getFullYear(), new Date().getMonth(), 0, 23, 59, 59).getTime();
+  if (start >= lastMonthStart && end <= lastMonthEnd) return 'lastMonth';
+  return 'custom';
+}
+
 export default function DateRangeSelector({ dateRange, onChange }: DateRangeSelectorProps) {
-  const [preset, setPreset] = useState('last30days');
-  const [showCustom, setShowCustom] = useState(false);
+  const [preset, setPreset] = useState(() => getPresetFromRange(dateRange));
+  const [showCustom, setShowCustom] = useState(() => getPresetFromRange(dateRange) === 'custom');
+
+  useEffect(() => {
+    const next = getPresetFromRange(dateRange);
+    setPreset(next);
+    setShowCustom(next === 'custom');
+  }, [dateRange.startDate.getTime(), dateRange.endDate.getTime()]);
 
   const handlePresetChange = (value: string) => {
     setPreset(value);
