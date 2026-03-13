@@ -135,7 +135,7 @@ export default function SessionList({ initialBillingStatus }: SessionListProps =
 
   async function loadPendingCount() {
     try {
-      const count = await countPendingSessions(filters);
+      const count = await countPendingSessions();
       setPendingCount(count);
     } catch (err) {
       console.error('Failed to load pending count:', err);
@@ -143,11 +143,22 @@ export default function SessionList({ initialBillingStatus }: SessionListProps =
   }
 
   function handleFilterChange(key: keyof SessionFilters, value: any) {
-    setFilters(prev => ({
-      ...prev,
-      [key]: value,
-      page: key === 'page' ? value : 1
-    }));
+    setFilters(prev => {
+      const updated = {
+        ...prev,
+        [key]: value,
+        page: key === 'page' ? value : 1
+      };
+      if (key === 'billingStatus' && value === 'pending') {
+        updated.startDate = '';
+        updated.endDate = '';
+      }
+      if (key === 'billingStatus' && value === 'all') {
+        updated.startDate = formatDate(startOfMonth(new Date()), 'yyyy-MM-dd');
+        updated.endDate = formatDate(endOfDay(new Date()), 'yyyy-MM-dd');
+      }
+      return updated;
+    });
   }
 
   function handlePageChange(newPage: number) {
