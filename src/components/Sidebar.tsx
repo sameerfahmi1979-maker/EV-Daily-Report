@@ -15,6 +15,17 @@ import {
   ChevronRight,
   Menu,
   X,
+  Clock,
+  Settings,
+  UserCircle,
+  ScrollText,
+  Wrench,
+  BarChart2,
+  Wallet,
+  Gauge,
+  FileSpreadsheet,
+  CalendarDays,
+  TrendingUp,
 } from 'lucide-react';
 import { SidebarItem } from './SidebarItem';
 import { SidebarSection } from './SidebarSection';
@@ -154,7 +165,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               />
               <SidebarItem
                 icon={Upload}
-                label="Import"
+                label="Upload Data"
                 isActive={currentView === 'import'}
                 isCollapsed={isCollapsed}
                 onClick={() => handleNavigate('import')}
@@ -165,6 +176,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 isActive={currentView === 'billing'}
                 isCollapsed={isCollapsed}
                 onClick={() => handleNavigate('billing')}
+              />
+              <SidebarItem
+                icon={Clock}
+                label="Shifts"
+                isActive={currentView === 'shifts'}
+                isCollapsed={isCollapsed}
+                onClick={() => handleNavigate('shifts')}
               />
               <SidebarItem
                 icon={DollarSign}
@@ -179,6 +197,81 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 isActive={currentView === 'fixed-charges'}
                 isCollapsed={isCollapsed}
                 onClick={() => handleNavigate('fixed-charges')}
+              />
+              <SidebarItem
+                icon={BarChart2}
+                label="Operator Stats"
+                isActive={currentView === 'operator-performance'}
+                isCollapsed={isCollapsed}
+                onClick={() => handleNavigate('operator-performance')}
+              />
+              <SidebarItem
+                icon={Wallet}
+                label="Accounting"
+                isActive={currentView === 'accountant'}
+                isCollapsed={isCollapsed}
+                onClick={() => handleNavigate('accountant')}
+              />
+              <SidebarItem
+                icon={Gauge}
+                label="KPI Dashboard"
+                isActive={currentView === 'kpi'}
+                isCollapsed={isCollapsed}
+                onClick={() => handleNavigate('kpi')}
+              />
+              <SidebarItem
+                icon={FileSpreadsheet}
+                label="CDR Export"
+                isActive={currentView === 'cdr'}
+                isCollapsed={isCollapsed}
+                onClick={() => handleNavigate('cdr')}
+              />
+              <SidebarItem
+                icon={CalendarDays}
+                label="Roster"
+                isActive={currentView === 'roster'}
+                isCollapsed={isCollapsed}
+                onClick={() => handleNavigate('roster')}
+              />
+              <SidebarItem
+                icon={TrendingUp}
+                label="Forecast"
+                isActive={currentView === 'forecast'}
+                isCollapsed={isCollapsed}
+                onClick={() => handleNavigate('forecast')}
+              />
+            </SidebarSection>
+
+            <div className="my-2 border-t border-gray-200" />
+
+            <SidebarSection title="Admin" isCollapsed={isCollapsed}>
+              <SidebarItem
+                icon={Settings}
+                label="Settings"
+                isActive={currentView === 'settings'}
+                isCollapsed={isCollapsed}
+                onClick={() => handleNavigate('settings')}
+              />
+              <SidebarItem
+                icon={UserCircle}
+                label="Users"
+                isActive={currentView === 'users'}
+                isCollapsed={isCollapsed}
+                onClick={() => handleNavigate('users')}
+              />
+              <SidebarItem
+                icon={ScrollText}
+                label="Audit Log"
+                isActive={currentView === 'audit'}
+                isCollapsed={isCollapsed}
+                onClick={() => handleNavigate('audit')}
+              />
+              <SidebarItem
+                icon={Wrench}
+                label="Maintenance"
+                isActive={currentView === 'maintenance'}
+                isCollapsed={isCollapsed}
+                onClick={() => handleNavigate('maintenance')}
               />
             </SidebarSection>
 

@@ -16,8 +16,22 @@ import SessionList from './SessionList';
 import AnalyticsDashboard from './AnalyticsDashboard';
 import ExportPage from './ExportPage';
 import HomeDashboard from './HomeDashboard';
+import ShiftManagement from './ShiftManagement';
+import SystemSettings from './SystemSettings';
+import UserManagement from './UserManagement';
+import AuditLog from './AuditLog';
+import MaintenanceLog from './MaintenanceLog';
+import OperatorPerformance from './OperatorPerformance';
+import AccountantDashboard from './AccountantDashboard';
+import NotificationBell from './NotificationBell';
+import KPIDashboard from './KPIDashboard';
+import CDRExport from './CDRExport';
+import OperatorRoster from './OperatorRoster';
+import RevenueForecast from './RevenueForecast';
 import { Database as DatabaseType } from '../lib/database.types';
 import { Sidebar } from './Sidebar';
+import { useTheme } from '../contexts/ThemeContext';
+import { Sun, Moon } from 'lucide-react';
 type Station = DatabaseType['public']['Tables']['stations']['Row'];
 type Operator = DatabaseType['public']['Tables']['operators']['Row'];
 type RateStructure = DatabaseType['public']['Tables']['rate_structures']['Row'] & {
@@ -43,7 +57,18 @@ type View =
   | 'import'
   | 'billing'
   | 'analytics'
-  | 'reports';
+  | 'reports'
+  | 'shifts'
+  | 'settings'
+  | 'users'
+  | 'audit'
+  | 'maintenance'
+  | 'operator-performance'
+  | 'accountant'
+  | 'kpi'
+  | 'cdr'
+  | 'roster'
+  | 'forecast';
 
 export function Dashboard() {
   const { user, signOut } = useAuth();
@@ -133,8 +158,10 @@ export function Dashboard() {
     setRefreshKey(prev => prev + 1);
   };
 
+  const { theme, toggleTheme } = useTheme();
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50">
+    <div className={`min-h-screen ${theme === 'dark' ? 'bg-gray-900' : 'bg-gradient-to-br from-blue-50 via-white to-green-50'}`}>
       <Sidebar
         currentView={currentView}
         onNavigate={setCurrentView}
@@ -143,7 +170,20 @@ export function Dashboard() {
       />
 
       <main className="lg:ml-[280px] transition-all duration-300 min-h-screen">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pt-20 lg:pt-8">
+        {/* Top utility bar */}
+        <div className="flex items-center justify-end gap-2 px-4 sm:px-6 lg:px-8 pt-4 lg:pt-4">
+          <button
+            onClick={toggleTheme}
+            className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+          >
+            {theme === 'dark'
+              ? <Sun size={20} className="text-yellow-400" />
+              : <Moon size={20} className="text-gray-600" />}
+          </button>
+          <NotificationBell />
+        </div>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 pt-2 lg:pt-2">
         {currentView === 'home' && (
           <HomeDashboard
             onNavigate={setCurrentView}
@@ -217,6 +257,28 @@ export function Dashboard() {
         {currentView === 'analytics' && <AnalyticsDashboard />}
 
         {currentView === 'reports' && <ExportPage />}
+
+        {currentView === 'shifts' && <ShiftManagement />}
+
+        {currentView === 'settings' && <SystemSettings />}
+
+        {currentView === 'users' && <UserManagement />}
+
+        {currentView === 'audit' && <AuditLog />}
+
+        {currentView === 'maintenance' && <MaintenanceLog />}
+
+        {currentView === 'operator-performance' && <OperatorPerformance />}
+
+        {currentView === 'accountant' && <AccountantDashboard />}
+
+        {currentView === 'kpi' && <KPIDashboard />}
+
+        {currentView === 'cdr' && <CDRExport />}
+
+        {currentView === 'roster' && <OperatorRoster />}
+
+        {currentView === 'forecast' && <RevenueForecast />}
         </div>
       </main>
 

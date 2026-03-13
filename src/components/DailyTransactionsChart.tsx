@@ -1,12 +1,24 @@
-import React from 'react';
-import { BarChart3 } from 'lucide-react';
 import { DailyTransaction } from '../lib/analyticsService';
+import { BarChart3 } from 'lucide-react';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid,
+  Tooltip, ResponsiveContainer, Legend,
+} from 'recharts';
 
 interface Props {
   data: DailyTransaction[];
 }
 
-const MAX_RECORDS = 10;
+const CONNECTOR_COLORS: Record<string, string> = {
+  'GBT DC': '#3b82f6',
+  'CCS1': '#10b981',
+  'CCS2': '#f59e0b',
+  'CHAdeMO': '#ef4444',
+  'Type 2': '#8b5cf6',
+  'Unknown': '#9ca3af',
+};
+
+const MAX_RECORDS = 14;
 
 export default function DailyTransactionsChart({ data }: Props) {
   const displayData = data.slice(0, MAX_RECORDS);
@@ -15,87 +27,40 @@ export default function DailyTransactionsChart({ data }: Props) {
     return (
       <div className="bg-white rounded-xl p-6 border border-gray-200">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Daily Transactions by Connector</h3>
-        <div className="text-center py-8 text-gray-500">
-          No transaction data available for this period
-        </div>
+        <div className="text-center py-8 text-gray-500">No transaction data available</div>
       </div>
     );
   }
 
   const connectorTypes = Object.keys(displayData[0]).filter(key => key !== 'date');
 
-  const connectorColors: { [key: string]: string } = {
-    'GBT DC': 'bg-blue-600',
-    'CCS1': 'bg-green-600',
-    'CCS2': 'bg-orange-600',
-    'CHAdeMO': 'bg-red-600',
-    'Type 2': 'bg-purple-600',
-    'Unknown': 'bg-gray-400'
-  };
-
-  const getConnectorColor = (type: string) => {
-    return connectorColors[type] || 'bg-gray-500';
-  };
-
-  const maxTotal = Math.max(
-    ...displayData.map(day =>
-      connectorTypes.reduce((sum, type) => sum + (Number(day[type]) || 0), 0)
-    ),
-    1
-  );
-
   return (
     <div className="bg-white rounded-xl p-6 border border-gray-200">
-      <div className="flex items-center gap-2 mb-4">
-        <BarChart3 className="w-5 h-5 text-gray-900" />
+      <div className="flex items-center gap-2 mb-2">
+        <BarChart3 className="w-5 h-5 text-gray-700" />
         <h3 className="text-lg font-semibold text-gray-900">Daily Transactions by Connector</h3>
       </div>
-      <p className="text-sm text-gray-600 mb-6">Transaction volume breakdown by connector type</p>
+      <p className="text-sm text-gray-500 mb-4">Stacked breakdown by connector type</p>
 
-      <div className="space-y-3">
-        {displayData.map((day) => {
-          const total = connectorTypes.reduce((sum, type) => sum + (Number(day[type]) || 0), 0);
-
-          return (
-            <div key={day.date} className="space-y-1">
-              <div className="flex items-center justify-between text-sm">
-                <span className="font-medium text-gray-900">{day.date}</span>
-                <span className="text-gray-600">{total} transactions</span>
-              </div>
-
-              <div className="flex h-8 rounded-lg overflow-hidden bg-gray-100">
-                {connectorTypes.map(type => {
-                  const count = Number(day[type]) || 0;
-                  const percentage = total > 0 ? (count / total) * 100 : 0;
-
-                  if (count === 0) return null;
-
-                  return (
-                    <div
-                      key={type}
-                      className={`${getConnectorColor(type)} flex items-center justify-center text-white text-xs font-medium transition-all duration-300 hover:opacity-80`}
-                      style={{ width: `${percentage}%` }}
-                      title={`${type}: ${count} (${percentage.toFixed(1)}%)`}
-                    >
-                      {percentage > 10 && count}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="mt-6 pt-4 border-t border-gray-200">
-        <div className="flex flex-wrap gap-3">
-          {connectorTypes.map(type => (
-            <div key={type} className="flex items-center gap-2">
-              <div className={`w-3 h-3 rounded ${getConnectorColor(type)}`} />
-              <span className="text-xs text-gray-600">{type}</span>
-            </div>
-          ))}
-        </div>
+      <div style={{ width: '100%', height: 320 }}>
+        <ResponsiveContainer>
+          <BarChart data={displayData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+            <XAxis dataKey="date" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
+            <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
+            <Tooltip contentStyle={{ borderRadius: '12px', border: '1px solid #e5e7eb', fontSize: 13 }} />
+            <Legend wrapperStyle={{ fontSize: 12 }} />
+            {connectorTypes.map((type) => (
+              <Bar
+                key={type}
+                dataKey={type}
+                stackId="stack"
+                fill={CONNECTOR_COLORS[type] || '#6b7280'}
+                radius={connectorTypes.indexOf(type) === connectorTypes.length - 1 ? [3, 3, 0, 0] : [0, 0, 0, 0]}
+              />
+            ))}
+          </BarChart>
+        </ResponsiveContainer>
       </div>
     </div>
   );

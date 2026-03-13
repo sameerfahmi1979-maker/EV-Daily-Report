@@ -13,6 +13,11 @@ import {
   exportSummaryToPDF,
   generateMonthlySummary
 } from '../lib/reportService';
+import {
+  exportShiftReportPDF,
+  exportOperatorReportPDF,
+  exportHandoverReportPDF,
+} from '../lib/pdfReportService';
 import { supabase } from '../lib/supabase';
 import { formatJODShort } from '../lib/currency';
 
@@ -52,12 +57,17 @@ interface FilterState {
   cardNumber: string;
 }
 
-type ReportTab = 'sessions' | 'billing' | 'summary';
+type ReportTab = 'sessions' | 'billing' | 'summary' | 'shifts' | 'operators' | 'handover';
+
+import { Clock, Users, Banknote } from 'lucide-react';
 
 const reportTabs = [
   { id: 'sessions' as ReportTab, label: 'Daily Operations', icon: FileText },
   { id: 'billing' as ReportTab, label: 'Revenue Analysis', icon: TrendingUp },
-  { id: 'summary' as ReportTab, label: 'Station Performance', icon: BarChart3 }
+  { id: 'summary' as ReportTab, label: 'Station Performance', icon: BarChart3 },
+  { id: 'shifts' as ReportTab, label: 'Shift Report', icon: Clock },
+  { id: 'operators' as ReportTab, label: 'Operator Report', icon: Users },
+  { id: 'handover' as ReportTab, label: 'Handover History', icon: Banknote },
 ];
 
 export default function ExportPage() {
@@ -287,6 +297,18 @@ export default function ExportPage() {
           } else {
             await exportSummaryToPDF(summary, true);
           }
+          break;
+
+        case 'shifts':
+          await exportShiftReportPDF(start, end, filters.stationId || undefined);
+          break;
+
+        case 'operators':
+          await exportOperatorReportPDF(start, end);
+          break;
+
+        case 'handover':
+          await exportHandoverReportPDF(start, end, filters.stationId || undefined);
           break;
       }
     } catch (err) {

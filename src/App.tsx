@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { AuthProvider } from './contexts/AuthContext';
+import { ThemeProvider } from './contexts/ThemeContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { LoginForm } from './components/LoginForm';
 import { RegisterForm } from './components/RegisterForm';
@@ -13,6 +14,7 @@ function App() {
   };
 
   return (
+    <ThemeProvider>
     <AuthProvider>
       <ProtectedRoute
         fallback={
@@ -26,6 +28,7 @@ function App() {
         <Dashboard />
       </ProtectedRoute>
     </AuthProvider>
+    </ThemeProvider>
   );
 }
 

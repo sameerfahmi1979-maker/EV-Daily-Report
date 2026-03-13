@@ -1079,3 +1079,58 @@ export function formatJOD(amount: number | string): string {
   const num = typeof amount === 'string' ? parseFloat(amount) : amount;
   return num.toFixed(3) + ' JOD';
 }
+
+// =============================================
+// OPTIMIZED: Server-side batch billing via single RPC call
+// Replaces N × (getRate + getPeriods + splitSession + allocateEnergy + save) calls
+// with ONE PostgreSQL function call that processes the entire batch
+// =============================================
+export interface BatchBillingResult {
+  total_kwh: number;
+  total_amount: number;
+  sessions_processed: number;
+  sessions_skipped: number;
+  rate_structure_found: boolean;
+  fixed_charges_total: number;
+}
+
+export async function calculateBatchBilling(
+  batchId: string,
+  stationId: string
+): Promise<BatchBillingResult> {
+  const { data, error } = await supabase.rpc('calculate_batch_billing', {
+    p_batch_id: batchId,
+    p_station_id: stationId
+  });
+
+  if (error) {
+    console.error('calculateBatchBilling RPC error:', error);
+    throw new Error(`Batch billing failed: ${error.message}`);
+  }
+
+  return data as BatchBillingResult;
+}
+
+// =============================================
+// Cascade delete an import batch and all related data
+// Uses server-side RPC for atomicity (single transaction)
+// =============================================
+export interface DeleteBatchResult {
+  batch_name: string;
+  deleted_sessions: number;
+  deleted_billings: number;
+  deleted_breakdowns: number;
+}
+
+export async function deleteImportBatch(batchId: string): Promise<DeleteBatchResult> {
+  const { data, error } = await supabase.rpc('delete_import_batch', {
+    p_batch_id: batchId
+  });
+
+  if (error) {
+    console.error('deleteImportBatch RPC error:', error);
+    throw new Error(`Delete import batch failed: ${error.message}`);
+  }
+
+  return data as DeleteBatchResult;
+}

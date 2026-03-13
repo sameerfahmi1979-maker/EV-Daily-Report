@@ -1,89 +1,62 @@
-import React from 'react';
-import { Clock } from 'lucide-react';
 import { HourlyPattern } from '../lib/analyticsService';
 import { formatJOD } from '../lib/billingService';
+import { Clock } from 'lucide-react';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid,
+  Tooltip, ResponsiveContainer, Legend,
+} from 'recharts';
 
 interface Props {
   data: HourlyPattern[];
 }
 
 export default function BestTimeToChargeChart({ data }: Props) {
-  const maxCost = Math.max(...data.map(d => d.avgCost), 1);
-  const maxEnergy = Math.max(...data.map(d => d.energy), 1);
+  if (data.length === 0) {
+    return (
+      <div className="bg-white rounded-xl p-6 border border-gray-200">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Best Time to Charge</h3>
+        <div className="text-center py-8 text-gray-500">No data available</div>
+      </div>
+    );
+  }
 
   const formatHour = (hour: number) => {
-    if (hour === 0) return '12 AM';
-    if (hour < 12) return `${hour} AM`;
-    if (hour === 12) return '12 PM';
-    return `${hour - 12} PM`;
+    if (hour === 0) return '12a';
+    if (hour < 12) return `${hour}a`;
+    if (hour === 12) return '12p';
+    return `${hour - 12}p`;
   };
 
-  const getCostColor = (cost: number) => {
-    const percentage = (cost / maxCost) * 100;
-    if (percentage < 33) return 'bg-green-500';
-    if (percentage < 66) return 'bg-yellow-500';
-    return 'bg-red-500';
-  };
+  const chartData = data.map(d => ({
+    hour: formatHour(d.hour),
+    'Avg Cost (JOD)': Number(d.avgCost.toFixed(3)),
+    'Energy (kWh)': Number(d.energy.toFixed(1)),
+    sessions: d.sessions,
+  }));
 
   return (
     <div className="bg-white rounded-xl p-6 border border-gray-200">
-      <div className="flex items-center gap-2 mb-4">
-        <Clock className="w-5 h-5 text-gray-900" />
+      <div className="flex items-center gap-2 mb-2">
+        <Clock className="w-5 h-5 text-gray-700" />
         <h3 className="text-lg font-semibold text-gray-900">Best Time to Charge</h3>
       </div>
-      <p className="text-sm text-gray-600 mb-6">Average cost and energy usage by hour</p>
+      <p className="text-sm text-gray-500 mb-4">Average cost and energy usage by hour of day</p>
 
-      <div className="space-y-1">
-        {data.map((hourData) => (
-          <div key={hourData.hour} className="flex items-center gap-2 group hover:bg-gray-50 p-2 rounded transition-colors">
-            <div className="w-16 text-xs text-gray-600 font-medium">
-              {formatHour(hourData.hour)}
-            </div>
-
-            <div className="flex-1 relative">
-              <div className="flex gap-1 h-6">
-                <div className="flex-1 bg-gray-100 rounded overflow-hidden">
-                  <div
-                    className={`h-full ${getCostColor(hourData.avgCost)} transition-all duration-300`}
-                    style={{ width: `${(hourData.avgCost / maxCost) * 100}%` }}
-                    title={`Avg Cost: ${formatJOD(hourData.avgCost)}`}
-                  />
-                </div>
-                <div className="flex-1 bg-gray-100 rounded overflow-hidden">
-                  <div
-                    className="h-full bg-blue-500 transition-all duration-300"
-                    style={{ width: `${(hourData.energy / maxEnergy) * 100}%` }}
-                    title={`Energy: ${hourData.energy.toFixed(2)} kWh`}
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="w-20 text-right">
-              <div className="text-xs font-semibold text-gray-900">
-                {hourData.sessions > 0 ? formatJOD(hourData.avgCost) : '-'}
-              </div>
-              <div className="text-xs text-gray-500">
-                {hourData.sessions} session{hourData.sessions !== 1 ? 's' : ''}
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="mt-6 flex items-center justify-center gap-6 text-xs">
-        <div className="flex items-center gap-2">
-          <div className="flex gap-1">
-            <div className="w-3 h-3 bg-green-500 rounded" />
-            <div className="w-3 h-3 bg-yellow-500 rounded" />
-            <div className="w-3 h-3 bg-red-500 rounded" />
-          </div>
-          <span className="text-gray-600">Cost Level</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 bg-blue-500 rounded" />
-          <span className="text-gray-600">Energy Usage</span>
-        </div>
+      <div style={{ width: '100%', height: 300 }}>
+        <ResponsiveContainer>
+          <BarChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+            <XAxis dataKey="hour" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
+            <YAxis yAxisId="left" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
+            <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
+            <Tooltip
+              contentStyle={{ borderRadius: '12px', border: '1px solid #e5e7eb', fontSize: 13 }}
+            />
+            <Legend wrapperStyle={{ fontSize: 12 }} />
+            <Bar yAxisId="left" dataKey="Avg Cost (JOD)" fill="#f59e0b" radius={[3, 3, 0, 0]} barSize={12} />
+            <Bar yAxisId="right" dataKey="Energy (kWh)" fill="#3b82f6" radius={[3, 3, 0, 0]} barSize={12} />
+          </BarChart>
+        </ResponsiveContainer>
       </div>
     </div>
   );

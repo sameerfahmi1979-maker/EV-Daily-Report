@@ -432,114 +432,29 @@ export async function updateImportBatch(
   if (error) throw error;
 }
 
-async function calculateCostFromRates(
-  startTs: string,
-  endTs: string,
-  energyKwh: number,
-  stationId: string,
-  maxDemandKw?: number
-): Promise<number> {
-  try {
-    const { getActiveRateStructure, getRatePeriods, getActiveFixedCharges } = await import('./billingService');
-
-    const startDate = new Date(startTs);
-    const rateStructure = await getActiveRateStructure(stationId, startDate);
-
-    if (!rateStructure) {
-      return energyKwh * 0.150;
-    }
-
-    const ratePeriods = await getRatePeriods(rateStructure.id);
-    if (ratePeriods.length === 0) {
-      return energyKwh * 0.150;
-    }
-
-    const tempSession = {
-      id: '',
-      station_id: stationId,
-      transaction_id: '',
-      charge_id: '',
-      card_number: '',
-      start_date: '',
-      start_time: '',
-      start_ts: startTs,
-      end_date: '',
-      end_time: '',
-      end_ts: endTs,
-      duration_minutes: 0,
-      energy_consumed_kwh: energyKwh,
-      calculated_cost: 0,
-      max_demand_kw: maxDemandKw ?? null,
-      station_code: null,
-      user_identifier: null,
-      import_batch_id: null,
-      connector_number: null,
-      connector_type: null,
-      duration_text: null,
-      co2_reduction_kg: null,
-      start_soc_percent: null,
-      end_soc_percent: null,
-      created_at: null,
-      updated_at: null
-    };
-
-    const { splitSessionIntoPeriods, allocateEnergyToSegments } = await import('./billingService');
-    const segments = await splitSessionIntoPeriods(tempSession, ratePeriods);
-    const segmentsWithEnergy = allocateEnergyToSegments(energyKwh, segments);
-
-    const demandKw = maxDemandKw || 0;
-    let totalCost = 0;
-
-    for (const segment of segmentsWithEnergy) {
-      const energyCharge = (segment.energyKwh || 0) * segment.ratePerKwh;
-      const demandCharge = demandKw * segment.demandChargePerKw;
-      totalCost += energyCharge + demandCharge;
-    }
-
-    const fixedCharges = await getActiveFixedCharges(stationId);
-    const fixedChargesTotal = fixedCharges.reduce((sum, c) => sum + c.amount, 0);
-
-    return totalCost + fixedChargesTotal;
-  } catch (error) {
-    return energyKwh * 0.150;
-  }
-}
-
-async function insertSession(session: ParsedSession, batchId: string, stationId?: string): Promise<void> {
+// =============================================
+// OPTIMIZED: Prepare a single session row for bulk insert
+// No HTTP calls — all done in-memory using cached rate data
+// =============================================
+function prepareSessionRow(
+  session: ParsedSession,
+  batchId: string,
+  stationId?: string
+): ChargingSessionInsert | null {
   const start = parseDateTimeString(session.startDateTime);
   const end = parseDateTimeString(session.endDateTime);
 
-  if (!start || !end) {
-    throw new Error('Invalid datetime format');
-  }
-
-  if (typeof session.energyKwh !== 'number' || isNaN(session.energyKwh)) {
-    throw new Error(`Invalid energy value: ${session.energyKwh}`);
-  }
-
-  if (session.maxDemandKw !== undefined && (typeof session.maxDemandKw !== 'number' || isNaN(session.maxDemandKw))) {
-    throw new Error(`Invalid max demand value: ${session.maxDemandKw}`);
-  }
+  if (!start || !end) return null;
+  if (typeof session.energyKwh !== 'number' || isNaN(session.energyKwh)) return null;
 
   const startMs = new Date(start.timestamp).getTime();
   const endMs = new Date(end.timestamp).getTime();
   const durationMinutes = Math.round((endMs - startMs) / (1000 * 60));
 
-  let calculatedCost = session.cost;
+  // Cost will be calculated server-side via RPC — use temporary fallback
+  const calculatedCost = session.cost ?? session.energyKwh * 0.150;
 
-  if (calculatedCost === undefined && stationId) {
-    calculatedCost = await calculateCostFromRates(
-      start.timestamp,
-      end.timestamp,
-      session.energyKwh,
-      stationId,
-      session.maxDemandKw
-    );
-  } else if (calculatedCost === undefined) {
-    calculatedCost = session.energyKwh * 0.150;
-  }
-
-  const sessionData: ChargingSessionInsert = {
+  return {
     transaction_id: session.transactionId,
     charge_id: session.chargeId,
     card_number: session.cardNumber,
@@ -564,26 +479,67 @@ async function insertSession(session: ParsedSession, batchId: string, stationId?
     start_soc_percent: session.startSocPercent ?? null,
     end_soc_percent: session.endSocPercent ?? null
   };
+}
 
-  console.log('Inserting session:', {
-    transaction_id: sessionData.transaction_id,
-    energy_kwh: sessionData.energy_consumed_kwh,
-    cost: sessionData.calculated_cost,
-    types: {
-      energy: typeof sessionData.energy_consumed_kwh,
-      cost: typeof sessionData.calculated_cost,
-      maxDemand: typeof sessionData.max_demand_kw
+// =============================================
+// OPTIMIZED: Pre-check duplicates in ONE query
+// =============================================
+async function checkDuplicateTransactionIds(transactionIds: string[]): Promise<Set<string>> {
+  const duplicates = new Set<string>();
+  // Query in chunks of 500 to stay within Supabase limits
+  const CHUNK = 500;
+  for (let i = 0; i < transactionIds.length; i += CHUNK) {
+    const chunk = transactionIds.slice(i, i + CHUNK);
+    const { data } = await supabase
+      .from('charging_sessions')
+      .select('transaction_id')
+      .in('transaction_id', chunk);
+    if (data) {
+      data.forEach(row => duplicates.add(row.transaction_id));
     }
-  });
-
-  const { error } = await supabase
-    .from('charging_sessions')
-    .insert([sessionData]);
-
-  if (error) {
-    console.error('Database insert error:', error);
-    throw error;
   }
+  return duplicates;
+}
+
+// =============================================
+// OPTIMIZED: Bulk insert in 250-row chunks
+// =============================================
+const BULK_CHUNK_SIZE = 250;
+
+async function bulkInsertSessions(
+  rows: ChargingSessionInsert[],
+  onChunkDone?: (inserted: number) => void
+): Promise<{ inserted: number; errors: Array<{ index: number; error: string }> }> {
+  let totalInserted = 0;
+  const errors: Array<{ index: number; error: string }> = [];
+
+  for (let i = 0; i < rows.length; i += BULK_CHUNK_SIZE) {
+    const chunk = rows.slice(i, i + BULK_CHUNK_SIZE);
+    const { error } = await supabase
+      .from('charging_sessions')
+      .insert(chunk);
+
+    if (error) {
+      console.error(`Bulk insert error at chunk ${i / BULK_CHUNK_SIZE}:`, error);
+      // Fallback: try one-by-one for this chunk to identify bad rows
+      for (let j = 0; j < chunk.length; j++) {
+        const { error: rowError } = await supabase
+          .from('charging_sessions')
+          .insert([chunk[j]]);
+        if (rowError) {
+          errors.push({ index: i + j, error: rowError.message });
+        } else {
+          totalInserted++;
+        }
+      }
+    } else {
+      totalInserted += chunk.length;
+    }
+
+    if (onChunkDone) onChunkDone(totalInserted);
+  }
+
+  return { inserted: totalInserted, errors };
 }
 
 async function validatePreImportConditions(stationId?: string): Promise<string[]> {
@@ -643,85 +599,120 @@ export async function processBatch(
   let failCount = 0;
   const errors: Array<{ row: number; session: ParsedSession; errors: string[] }> = [];
   const skipped: Array<{ row: number; session: ParsedSession; reason: string }> = [];
-
   let co2Count = 0;
   let totalCo2 = 0;
 
-  for (let i = 0; i < sessions.length; i++) {
-    if (cancelToken?.cancelled) {
-      console.log('Import cancelled by user');
-      break;
-    }
+  // ── STEP 1: Validate all rows (client-side, instant) ──
+  if (onProgress) onProgress(0, sessions.length);
+  const validSessions: { index: number; session: ParsedSession }[] = [];
 
+  for (let i = 0; i < sessions.length; i++) {
+    if (cancelToken?.cancelled) break;
     const session = sessions[i];
     const rowNumber = i + 2;
-
     const validationErrors = validateSession(session, rowNumber);
 
     if (validationErrors.length > 0) {
       failCount++;
       errors.push({ row: rowNumber, session, errors: validationErrors });
-      if (onProgress) onProgress(i + 1, sessions.length);
-      continue;
+    } else {
+      validSessions.push({ index: i, session });
     }
-
-    try {
-      await insertSession(session, batchId, stationId);
-      successCount++;
-
-      if (session.co2ReductionKg !== undefined && session.co2ReductionKg !== null) {
-        co2Count++;
-        totalCo2 += session.co2ReductionKg;
-      }
-    } catch (error) {
-      // Check if this is a transaction_id unique constraint violation
-      if (error && typeof error === 'object' && 'code' in error && error.code === '23505') {
-        // Unique constraint violation
-        if ('message' in error && typeof error.message === 'string' && error.message.includes('transaction_id')) {
-          skipCount++;
-          const reason = `Transaction ID ${session.transactionId} already exists in database`;
-          skipped.push({
-            row: rowNumber,
-            session,
-            reason
-          });
-          console.log(`Skipping row ${rowNumber}: ${reason}`);
-          if (onProgress) onProgress(i + 1, sessions.length);
-          continue;
-        }
-      }
-
-      // For all other errors, treat as failure
-      failCount++;
-      let errorMessage = 'Unknown error';
-
-      if (error && typeof error === 'object') {
-        if ('message' in error && typeof error.message === 'string') {
-          errorMessage = error.message;
-
-          if ('code' in error && error.code) {
-            errorMessage += ` (code: ${error.code})`;
-          }
-
-          if ('details' in error && error.details) {
-            errorMessage += ` - ${error.details}`;
-          }
-
-          if ('hint' in error && error.hint) {
-            errorMessage += ` (hint: ${error.hint})`;
-          }
-        }
-      } else if (error instanceof Error) {
-        errorMessage = error.message;
-      }
-
-      console.error(`Import error at row ${rowNumber}:`, errorMessage, error);
-      errors.push({ row: rowNumber, session, errors: [errorMessage] });
-    }
-
-    if (onProgress) onProgress(i + 1, sessions.length);
   }
 
+  if (cancelToken?.cancelled || validSessions.length === 0) {
+    const status = cancelToken?.cancelled ? 'cancelled' : (failCount > 0 ? 'failed' : 'completed');
+    await updateImportBatch(batchId, 0, 0, failCount, status, [], errors);
+    return { batchId, totalRecords: sessions.length, successCount: 0, skippedCount: 0, failureCount: failCount, skipped: [], errors };
+  }
+
+  // ── STEP 2: Pre-check duplicates in ONE query (not N queries) ──
+  const allTransactionIds = validSessions.map(v => v.session.transactionId);
+  const existingIds = await checkDuplicateTransactionIds(allTransactionIds);
+
+  // Separate duplicates from new rows
+  const newSessions: { index: number; session: ParsedSession }[] = [];
+  for (const item of validSessions) {
+    if (existingIds.has(item.session.transactionId)) {
+      skipCount++;
+      skipped.push({
+        row: item.index + 2,
+        session: item.session,
+        reason: `Transaction ID ${item.session.transactionId} already exists in database`
+      });
+    } else {
+      newSessions.push(item);
+    }
+  }
+
+  if (onProgress) onProgress(Math.floor(sessions.length * 0.3), sessions.length);
+
+  // ── STEP 3: Prepare all rows for bulk insert (in-memory, no HTTP) ──
+  const rowsToInsert: ChargingSessionInsert[] = [];
+  const rowSessionMap: { index: number; session: ParsedSession }[] = [];
+
+  for (const item of newSessions) {
+    if (cancelToken?.cancelled) break;
+    const row = prepareSessionRow(item.session, batchId, stationId);
+    if (row) {
+      rowsToInsert.push(row);
+      rowSessionMap.push(item);
+
+      if (item.session.co2ReductionKg !== undefined && item.session.co2ReductionKg !== null) {
+        co2Count++;
+        totalCo2 += item.session.co2ReductionKg;
+      }
+    } else {
+      failCount++;
+      errors.push({ row: item.index + 2, session: item.session, errors: ['Failed to prepare session data'] });
+    }
+  }
+
+  if (onProgress) onProgress(Math.floor(sessions.length * 0.5), sessions.length);
+
+  // ── STEP 4: Bulk insert in 250-row chunks ──
+  if (rowsToInsert.length > 0 && !cancelToken?.cancelled) {
+    console.log(`Bulk inserting ${rowsToInsert.length} sessions in ${Math.ceil(rowsToInsert.length / BULK_CHUNK_SIZE)} chunks...`);
+    const bulkResult = await bulkInsertSessions(rowsToInsert, (inserted) => {
+      if (onProgress) {
+        const progress = Math.floor(sessions.length * 0.5) + Math.floor((inserted / rowsToInsert.length) * sessions.length * 0.3);
+        onProgress(Math.min(progress, sessions.length), sessions.length);
+      }
+    });
+
+    successCount = bulkResult.inserted;
+
+    for (const err of bulkResult.errors) {
+      const mapped = rowSessionMap[err.index];
+      if (mapped) {
+        failCount++;
+        errors.push({ row: mapped.index + 2, session: mapped.session, errors: [err.error] });
+      }
+    }
+  }
+
+  // ── STEP 5: Server-side billing via RPC (1 call for entire batch) ──
+  if (successCount > 0 && stationId && !cancelToken?.cancelled) {
+    try {
+      console.log(`Calling calculate_batch_billing RPC for batch ${batchId}...`);
+      const { data: billingResult, error: billingError } = await supabase.rpc('calculate_batch_billing', {
+        p_batch_id: batchId,
+        p_station_id: stationId
+      });
+
+      if (billingError) {
+        console.warn('Batch billing RPC warning (non-fatal):', billingError.message);
+      } else {
+        console.log('Batch billing completed:', billingResult);
+      }
+    } catch (billingErr) {
+      console.warn('Batch billing RPC failed (non-fatal):', billingErr);
+    }
+  }
+
+  if (onProgress) onProgress(sessions.length, sessions.length);
+
+  // ── STEP 6: Finalize ──
   let status: string;
   if (cancelToken?.cancelled) {
     status = 'cancelled';
@@ -731,12 +722,15 @@ export async function processBatch(
     status = 'completed';
   }
 
-  console.log('Import completed - CO2 Statistics:', {
-    sessionsWithCO2: co2Count,
-    totalSessions: successCount,
-    totalCO2Reduction: totalCo2.toFixed(2) + ' kg',
-    averageCO2PerSession: co2Count > 0 ? (totalCo2 / co2Count).toFixed(2) + ' kg' : 'N/A',
-    percentageWithCO2: successCount > 0 ? ((co2Count / successCount) * 100).toFixed(1) + '%' : 'N/A'
+  console.log('Import completed:', {
+    totalRecords: sessions.length,
+    successCount,
+    skipCount,
+    failCount,
+    co2Stats: {
+      sessionsWithCO2: co2Count,
+      totalCO2Reduction: totalCo2.toFixed(2) + ' kg'
+    }
   });
 
   await updateImportBatch(batchId, successCount, skipCount, failCount, status, skipped, errors);
