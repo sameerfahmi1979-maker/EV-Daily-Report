@@ -73,6 +73,7 @@ type View =
 export function Dashboard() {
   const { user, signOut } = useAuth();
   const [currentView, setCurrentView] = useState<View>('home');
+  const [billingInitialFilter, setBillingInitialFilter] = useState<'all' | 'calculated' | 'pending' | undefined>(undefined);
   const [hasData, setHasData] = useState(false);
   const [loading, setLoading] = useState(true);
   const [seeding, setSeeding] = useState(false);
@@ -158,13 +159,25 @@ export function Dashboard() {
     setRefreshKey(prev => prev + 1);
   };
 
+  const handleNavigate = (view: View) => {
+    if (view !== 'billing') {
+      setBillingInitialFilter(undefined);
+    }
+    setCurrentView(view);
+  };
+
+  const handleNavigateWithPending = () => {
+    setBillingInitialFilter('pending');
+    setCurrentView('billing');
+  };
+
   const { theme, toggleTheme } = useTheme();
 
   return (
     <div className={`min-h-screen ${theme === 'dark' ? 'bg-gray-900' : 'bg-gradient-to-br from-blue-50 via-white to-green-50'}`}>
       <Sidebar
         currentView={currentView}
-        onNavigate={setCurrentView}
+        onNavigate={handleNavigate}
         userEmail={user?.email}
         onSignOut={signOut}
       />
@@ -186,7 +199,8 @@ export function Dashboard() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 pt-2 lg:pt-2">
         {currentView === 'home' && (
           <HomeDashboard
-            onNavigate={setCurrentView}
+            onNavigate={handleNavigate}
+            onNavigateToPendingBilling={handleNavigateWithPending}
             hasData={hasData}
             loading={loading}
             onSeedData={handleSeedData}
@@ -252,7 +266,7 @@ export function Dashboard() {
 
         {currentView === 'import' && <ImportPage onNavigateToBilling={() => setCurrentView('billing')} />}
 
-        {currentView === 'billing' && <SessionList />}
+        {currentView === 'billing' && <SessionList initialBillingStatus={billingInitialFilter} />}
 
         {currentView === 'analytics' && <AnalyticsDashboard />}
 

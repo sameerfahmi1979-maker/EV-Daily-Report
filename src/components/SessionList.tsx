@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calculator, Eye, RefreshCw, AlertCircle, CheckCircle, Loader2, Filter, FileText, CheckSquare, Square, Edit, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Calculator, Eye, RefreshCw, AlertCircle, CheckCircle, Loader2, Filter, FileText, CheckSquare, Square, CreditCard as Edit, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import {
   getSessionsWithBillingFiltered,
   calculateAndSaveSessionBilling,
@@ -53,16 +53,20 @@ interface Session {
   }>;
 }
 
-export default function SessionList() {
+interface SessionListProps {
+  initialBillingStatus?: 'all' | 'calculated' | 'pending';
+}
+
+export default function SessionList({ initialBillingStatus }: SessionListProps = {}) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
   const [calculating, setCalculating] = useState<string | null>(null);
   const [stations, setStations] = useState<Station[]>([]);
   const [filters, setFilters] = useState<SessionFilters>({
     stationId: '',
-    billingStatus: 'all',
-    startDate: formatDate(startOfMonth(new Date()), 'yyyy-MM-dd'),
-    endDate: formatDate(endOfDay(new Date()), 'yyyy-MM-dd'),
+    billingStatus: initialBillingStatus || 'all',
+    startDate: initialBillingStatus === 'pending' ? '' : formatDate(startOfMonth(new Date()), 'yyyy-MM-dd'),
+    endDate: initialBillingStatus === 'pending' ? '' : formatDate(endOfDay(new Date()), 'yyyy-MM-dd'),
     searchTerm: '',
     page: 1,
     pageSize: 50

@@ -139,6 +139,7 @@ function WorldClockDigital() {
 
 interface HomeDashboardProps {
   onNavigate: (view: string) => void;
+  onNavigateToPendingBilling: () => void;
   hasData: boolean;
   loading: boolean;
   onSeedData: () => Promise<void>;
@@ -148,6 +149,7 @@ interface HomeDashboardProps {
 
 export default function HomeDashboard({
   onNavigate,
+  onNavigateToPendingBilling,
   hasData,
   loading: initialLoading,
   onSeedData,
@@ -183,14 +185,10 @@ export default function HomeDashboard({
   const loadDashboard = useCallback(async () => {
     try {
       setDashboardLoading(true);
-      const dateFilters = {
-        startDate: format(dateRange.startDate, 'yyyy-MM-dd'),
-        endDate: format(dateRange.endDate, 'yyyy-MM-dd'),
-      };
       const [summary, co2Metrics, pending, energyTrend, revenue, connectors, hourly, daily, activity] = await Promise.all([
         getSummaryMetrics(dateRange),
         getCO2ImpactMetrics(dateRange),
-        countPendingSessions(dateFilters),
+        countPendingSessions(),
         getEnergyTrend(dateRange),
         getRevenueByStation(dateRange),
         getConnectorTypeComparison(dateRange),
@@ -472,7 +470,7 @@ export default function HomeDashboard({
                     <p className="font-medium text-gray-900">{pendingBilling} session(s) pending billing</p>
                     <p className="text-sm text-gray-500">Go to Billing to calculate</p>
                   </div>
-                  <button onClick={() => onNavigate('billing')} className="px-3 py-1.5 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
+                  <button onClick={onNavigateToPendingBilling} className="px-3 py-1.5 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
                     Open Billing
                   </button>
                 </div>
