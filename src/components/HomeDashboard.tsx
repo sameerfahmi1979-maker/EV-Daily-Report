@@ -183,10 +183,14 @@ export default function HomeDashboard({
   const loadDashboard = useCallback(async () => {
     try {
       setDashboardLoading(true);
+      const dateFilters = {
+        startDate: format(dateRange.startDate, 'yyyy-MM-dd'),
+        endDate: format(dateRange.endDate, 'yyyy-MM-dd'),
+      };
       const [summary, co2Metrics, pending, energyTrend, revenue, connectors, hourly, daily, activity] = await Promise.all([
         getSummaryMetrics(dateRange),
         getCO2ImpactMetrics(dateRange),
-        countPendingSessions(),
+        countPendingSessions(dateFilters),
         getEnergyTrend(dateRange),
         getRevenueByStation(dateRange),
         getConnectorTypeComparison(dateRange),

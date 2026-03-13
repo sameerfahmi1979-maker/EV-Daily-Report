@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar } from 'lucide-react';
+import { Calendar, Check } from 'lucide-react';
 import { format } from 'date-fns';
 import { DateRange, getDateRangePreset } from '../lib/analyticsService';
 
@@ -11,7 +11,6 @@ interface DateRangeSelectorProps {
 function getPresetFromRange(dateRange: DateRange): string {
   const start = dateRange.startDate.getTime();
   const end = dateRange.endDate.getTime();
-  const now = Date.now();
   const todayStart = new Date().setHours(0, 0, 0, 0);
   const todayEnd = new Date().setHours(23, 59, 59, 999);
   const yesterdayStart = todayStart - 86400000;
@@ -33,39 +32,54 @@ function getPresetFromRange(dateRange: DateRange): string {
 export default function DateRangeSelector({ dateRange, onChange }: DateRangeSelectorProps) {
   const [preset, setPreset] = useState(() => getPresetFromRange(dateRange));
   const [showCustom, setShowCustom] = useState(() => getPresetFromRange(dateRange) === 'custom');
+  const [customStart, setCustomStart] = useState(() => format(dateRange.startDate, 'yyyy-MM-dd'));
+  const [customEnd, setCustomEnd] = useState(() => format(dateRange.endDate, 'yyyy-MM-dd'));
+  const [hasUnapplied, setHasUnapplied] = useState(false);
 
   useEffect(() => {
     const next = getPresetFromRange(dateRange);
     setPreset(next);
     setShowCustom(next === 'custom');
+    setCustomStart(format(dateRange.startDate, 'yyyy-MM-dd'));
+    setCustomEnd(format(dateRange.endDate, 'yyyy-MM-dd'));
+    setHasUnapplied(false);
   }, [dateRange.startDate.getTime(), dateRange.endDate.getTime()]);
 
   const handlePresetChange = (value: string) => {
     setPreset(value);
     if (value === 'custom') {
       setShowCustom(true);
+      setHasUnapplied(false);
     } else {
       setShowCustom(false);
+      setHasUnapplied(false);
       const range = getDateRangePreset(value);
       onChange(range);
     }
   };
 
-  const handleCustomDateChange = (type: 'start' | 'end', value: string) => {
-    if (!value) return;
+  const applyCustomRange = () => {
+    if (!customStart || !customEnd) return;
+    const startDate = new Date(customStart);
+    const endDate = new Date(customEnd);
+    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) return;
+    if (startDate > endDate) return;
+    setHasUnapplied(false);
+    onChange({ startDate, endDate });
+  };
 
-    const date = new Date(value);
-    if (isNaN(date.getTime())) return;
+  const handleStartChange = (value: string) => {
+    setCustomStart(value);
+    setHasUnapplied(true);
+  };
 
-    if (type === 'start') {
-      onChange({ startDate: date, endDate: dateRange.endDate });
-    } else {
-      onChange({ startDate: dateRange.startDate, endDate: date });
-    }
+  const handleEndChange = (value: string) => {
+    setCustomEnd(value);
+    setHasUnapplied(true);
   };
 
   return (
-    <div className="flex items-center space-x-4">
+    <div className="flex flex-wrap items-center gap-3">
       <div className="flex items-center space-x-2">
         <Calendar className="text-gray-500" size={20} />
         <label className="text-sm font-medium text-gray-700">Date Range:</label>
@@ -86,20 +100,32 @@ export default function DateRangeSelector({ dateRange, onChange }: DateRangeSele
       </select>
 
       {showCustom && (
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center gap-2">
           <input
             type="date"
-            value={format(dateRange.startDate, 'yyyy-MM-dd')}
-            onChange={(e) => handleCustomDateChange('start', e.target.value)}
+            value={customStart}
+            onChange={(e) => handleStartChange(e.target.value)}
             className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
           />
           <span className="text-gray-500">to</span>
           <input
             type="date"
-            value={format(dateRange.endDate, 'yyyy-MM-dd')}
-            onChange={(e) => handleCustomDateChange('end', e.target.value)}
+            value={customEnd}
+            onChange={(e) => handleEndChange(e.target.value)}
             className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
           />
+          <button
+            onClick={applyCustomRange}
+            disabled={!customStart || !customEnd}
+            className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              hasUnapplied
+                ? 'bg-blue-600 text-white hover:bg-blue-700'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            } disabled:opacity-50`}
+          >
+            <Check className="w-4 h-4" />
+            Apply
+          </button>
         </div>
       )}
     </div>
