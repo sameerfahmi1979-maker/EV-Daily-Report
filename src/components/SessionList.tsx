@@ -580,8 +580,18 @@ export default function SessionList({ initialBillingStatus }: SessionListProps =
               <input
                 type="text"
                 placeholder="Transaction ID, Card, Charge ID"
-                value={filters.searchTerm}
-                onChange={(e) => handleFilterChange('searchTerm', e.target.value)}
+                defaultValue={filters.searchTerm}
+                key={`search-${filters.searchTerm}`}
+                onBlur={(e) => {
+                  if (e.target.value !== filters.searchTerm) {
+                    handleFilterChange('searchTerm', e.target.value);
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleFilterChange('searchTerm', (e.target as HTMLInputElement).value);
+                  }
+                }}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>

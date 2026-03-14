@@ -1099,9 +1099,8 @@ export function formatJOD(amount: number | string): string {
 }
 
 // =============================================
-// TURBO: Server-side bulk billing via single RPC call
-// Processes ALL sessions in ONE PostgreSQL transaction
-// Eliminates all HTTP round-trips — everything runs on the DB server
+// CLIENT-SIDE Time-of-Use Billing (replaces server-side RPCs)
+// Correctly splits each session across rate period time boundaries
 // =============================================
 export interface TurboBulkResult {
   total: number;
@@ -1112,51 +1111,84 @@ export interface TurboBulkResult {
   elapsed_ms: number;
 }
 
+/**
+ * Recalculate billing for multiple sessions using correct TOU rate splitting.
+ * Replaces old turbo_bulk_calculate_billing RPC that used flat rates.
+ */
 export async function turboBulkCalculateBilling(
   sessionIds: string[],
   recalculate: boolean = false
 ): Promise<TurboBulkResult> {
-  console.log(`[Turbo Billing] Starting server-side calculation for ${sessionIds.length} sessions (recalculate: ${recalculate})`);
+  console.log(`[TOU Billing] Starting client-side TOU calculation for ${sessionIds.length} sessions (recalculate: ${recalculate})`);
+  const startTime = Date.now();
 
-  const { data, error } = await (supabase.rpc as any)('turbo_bulk_calculate_billing', {
-    p_session_ids: sessionIds,
-    p_recalculate: recalculate
-  });
+  const result: TurboBulkResult = {
+    total: sessionIds.length,
+    successful: 0,
+    failed: 0,
+    skipped: 0,
+    errors: [],
+    elapsed_ms: 0
+  };
 
-  if (error) {
-    console.error('[Turbo Billing] RPC error:', error);
-    throw new Error(`Turbo bulk billing failed: ${error.message}`);
+  for (const sessionId of sessionIds) {
+    try {
+      if (recalculate) {
+        await recalculateSession(sessionId);
+      } else {
+        // Check if already calculated
+        const existing = await getBillingCalculation(sessionId);
+        if (existing) {
+          result.skipped++;
+          continue;
+        }
+        await calculateAndSaveSessionBilling(sessionId);
+      }
+      result.successful++;
+    } catch (error) {
+      result.failed++;
+      result.errors.push({
+        sessionId,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
   }
 
-  const result = data as TurboBulkResult;
-  console.log(`[Turbo Billing] Complete in ${result.elapsed_ms}ms: ${result.successful} successful, ${result.failed} failed, ${result.skipped} skipped`);
+  result.elapsed_ms = Date.now() - startTime;
+  console.log(`[TOU Billing] Complete in ${result.elapsed_ms}ms: ${result.successful} successful, ${result.failed} failed, ${result.skipped} skipped`);
 
   return result;
 }
 
+/**
+ * Calculate all pending sessions using correct TOU rate splitting.
+ * Replaces old turbo_calculate_all_pending RPC that used flat rates.
+ */
 export async function turboCalculateAllPending(
   filters?: SessionFilters
 ): Promise<TurboBulkResult> {
-  // Call the server-side function that finds AND processes all pending sessions
-  // No more 1000-row PostgREST limit — everything runs on the database server
-  console.log(`[Turbo Billing] Starting turbo_calculate_all_pending (server-side)`);
+  console.log(`[TOU Billing] Starting client-side TOU calculation for all pending sessions`);
+  const startTime = Date.now();
 
-  const stationId = filters?.stationId || null;
+  // Use the correct client-side path with cached rate structures
+  const clientResult = await calculateAllPendingSessions(
+    filters,
+    undefined, // no progress callback needed at this level
+    50,         // batch size for progress reporting
+    true        // skip missing rates
+  );
 
-  const { data, error } = await (supabase.rpc as any)('turbo_calculate_all_pending', {
-    p_station_id: stationId,
-    p_batch_size: 5000
-  });
+  const elapsed = Date.now() - startTime;
+  console.log(`[TOU Billing] All pending complete in ${elapsed}ms: ${clientResult.successful} successful, ${clientResult.failed} failed, ${clientResult.skipped} skipped`);
 
-  if (error) {
-    console.error('[Turbo Billing] RPC error:', error);
-    throw new Error(`Turbo calculate all pending failed: ${error.message}`);
-  }
-
-  const result = data as TurboBulkResult;
-  console.log(`[Turbo Billing] All pending complete in ${result.elapsed_ms}ms: ${result.successful} successful, ${result.failed} failed, ${result.skipped} skipped`);
-
-  return result;
+  return {
+    total: clientResult.total,
+    successful: clientResult.successful,
+    failed: clientResult.failed,
+    skipped: clientResult.skipped,
+    errors: clientResult.errors,
+    elapsed_ms: elapsed
+  };
 }
 
 // =============================================

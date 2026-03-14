@@ -42,10 +42,10 @@ export interface CreateShiftInput {
 
 // Shift type definitions for time calculations
 export const SHIFT_TYPES: Record<string, { label: string; duration: '8h' | '12h'; defaultStart: string; defaultEnd: string }> = {
-  morning:        { label: 'Morning (08:00–16:00)',       duration: '8h',  defaultStart: '08:00', defaultEnd: '16:00' },
-  evening:        { label: 'Evening (16:00–00:00)',       duration: '8h',  defaultStart: '16:00', defaultEnd: '00:00' },
-  night:          { label: 'Night (00:00–08:00)',         duration: '8h',  defaultStart: '00:00', defaultEnd: '08:00' },
-  extended_day:   { label: 'Extended Day (08:00–20:00)',  duration: '12h', defaultStart: '08:00', defaultEnd: '20:00' },
+  morning:        { label: 'Morning (00:00–08:00)',        duration: '8h',  defaultStart: '00:00', defaultEnd: '08:00' },
+  evening:        { label: 'Evening (08:00–16:00)',        duration: '8h',  defaultStart: '08:00', defaultEnd: '16:00' },
+  night:          { label: 'Night (16:00–00:00)',          duration: '8h',  defaultStart: '16:00', defaultEnd: '00:00' },
+  extended_day:   { label: 'Extended Day (08:00–20:00)',   duration: '12h', defaultStart: '08:00', defaultEnd: '20:00' },
   extended_night: { label: 'Extended Night (20:00–08:00)', duration: '12h', defaultStart: '20:00', defaultEnd: '08:00' },
 };
 
