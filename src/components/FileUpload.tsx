@@ -1,7 +1,7 @@
-import React, { useState, useRef, useMemo } from 'react';
-import { Upload, FileSpreadsheet, Download, AlertCircle, CheckCircle, Loader2, XCircle, ArrowRight, ArrowLeft, Clock, Table2, Rocket } from 'lucide-react';
+import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react';
+import { Upload, FileSpreadsheet, Download, AlertCircle, CheckCircle, Loader2, XCircle, ArrowRight, ArrowLeft, Clock, Table2, Rocket, Trash2, History } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { parseExcelFile, processBatch, createImportBatch, downloadSampleTemplate, CancelToken, validateSession } from '../lib/importService';
+import { parseExcelFile, processBatch, createImportBatch, downloadSampleTemplate, CancelToken, validateSession, getImportBatches, deleteImportBatchCascade } from '../lib/importService';
 import { createShift, linkSessionsToShift, SHIFT_TYPES } from '../lib/shiftService';
 import SpreadsheetPreview from './SpreadsheetPreview';
 import ShiftSelector, { ShiftSelection } from './ShiftSelector';
@@ -38,6 +38,29 @@ export default function FileUpload({ onImportComplete, onNavigateToBilling }: Fi
     details?: { total: number; success: number; skipped: number; failed: number };
   } | null>(null);
   const cancelTokenRef = useRef<CancelToken>({ cancelled: false });
+
+  // Import batch history
+  const [batches, setBatches] = useState<any[]>([]);
+  const [loadingBatches, setLoadingBatches] = useState(false);
+  const [deletingBatchId, setDeletingBatchId] = useState<string | null>(null);
+  const [deletingBatch, setDeletingBatch] = useState(false);
+
+  // Load batch history
+  const loadBatches = useCallback(async () => {
+    setLoadingBatches(true);
+    try {
+      const data = await getImportBatches();
+      setBatches(data || []);
+    } catch (err) {
+      console.error('Failed to load batches:', err);
+    } finally {
+      setLoadingBatches(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadBatches();
+  }, [loadBatches]);
 
   // Validation metrics
   const validationMetrics = useMemo(() => {
@@ -217,6 +240,22 @@ export default function FileUpload({ onImportComplete, onNavigateToBilling }: Fi
   function handleCancelImport() {
     if (cancelTokenRef.current) {
       cancelTokenRef.current.cancelled = true;
+    }
+  }
+
+  async function handleDeleteBatch(batchId: string) {
+    setDeletingBatch(true);
+    try {
+      const result = await deleteImportBatchCascade(batchId);
+      alert(`✅ Deleted "${result.filename}":\n• ${result.sessions_deleted} sessions\n• ${result.billing_deleted} billing records\n• ${result.shifts_deleted} shifts`);
+      setDeletingBatchId(null);
+      await loadBatches();
+      onImportComplete(); // Refresh parent data
+    } catch (err) {
+      console.error('Failed to delete batch:', err);
+      alert('Failed to delete import batch');
+    } finally {
+      setDeletingBatch(false);
     }
   }
 
@@ -521,6 +560,133 @@ export default function FileUpload({ onImportComplete, onNavigateToBilling }: Fi
             </div>
           )}
         </>
+      )}
+
+      {/* ==================== IMPORT HISTORY ==================== */}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <History size={18} className="text-gray-500" />
+            <h3 className="text-lg font-semibold text-gray-900">Import History</h3>
+            <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{batches.length}</span>
+          </div>
+          <button
+            onClick={loadBatches}
+            disabled={loadingBatches}
+            className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+          >
+            {loadingBatches ? 'Loading...' : 'Refresh'}
+          </button>
+        </div>
+
+        {loadingBatches && batches.length === 0 ? (
+          <div className="p-8 text-center text-gray-500">Loading import history...</div>
+        ) : batches.length === 0 ? (
+          <div className="p-8 text-center text-gray-400">No imports yet. Upload a file above to get started.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-200">
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">File</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Date</th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600">Total</th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600">Success</th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600">Skipped</th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600">Failed</th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600">Status</th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {batches.map((batch: any) => (
+                  <tr key={batch.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <FileSpreadsheet size={16} className="text-emerald-600 flex-shrink-0" />
+                        <span className="font-medium text-gray-900 truncate max-w-[200px]" title={batch.filename}>
+                          {batch.filename}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
+                      {batch.upload_date ? new Date(batch.upload_date).toLocaleString() : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-center font-mono">{batch.records_total || 0}</td>
+                    <td className="px-4 py-3 text-center font-mono text-emerald-700">{batch.records_success || 0}</td>
+                    <td className="px-4 py-3 text-center font-mono text-amber-700">{batch.records_skipped || 0}</td>
+                    <td className="px-4 py-3 text-center font-mono text-red-700">{batch.records_failed || 0}</td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={`inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full ${
+                        batch.status === 'completed' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                        batch.status === 'completed_with_errors' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                        batch.status === 'failed' ? 'bg-red-50 text-red-700 border border-red-200' :
+                        batch.status === 'processing' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
+                        'bg-gray-50 text-gray-700 border border-gray-200'
+                      }`}>
+                        {batch.status || '—'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <button
+                        onClick={() => setDeletingBatchId(batch.id)}
+                        className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                        title="Delete this batch and all related records"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* ==================== DELETE BATCH CONFIRMATION ==================== */}
+      {deletingBatchId && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={() => !deletingBatch && setDeletingBatchId(null)}>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm mx-4 p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                <Trash2 size={20} className="text-red-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">Delete Upload?</h3>
+                <p className="text-sm text-gray-500">
+                  This will permanently delete:
+                </p>
+              </div>
+            </div>
+            <ul className="text-sm text-gray-700 bg-red-50 rounded-lg p-3 mb-4 space-y-1">
+              <li>• All charging sessions from this file</li>
+              <li>• All billing calculations for those sessions</li>
+              <li>• The shift record linked to this upload</li>
+              <li>• The import batch record itself</li>
+            </ul>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeletingBatchId(null)}
+                disabled={deletingBatch}
+                className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleDeleteBatch(deletingBatchId)}
+                disabled={deletingBatch}
+                className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {deletingBatch ? (
+                  <><Loader2 size={16} className="animate-spin" /> Deleting...</>
+                ) : (
+                  <><Trash2 size={16} /> Delete Everything</>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

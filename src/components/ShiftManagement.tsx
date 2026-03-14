@@ -1,11 +1,17 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Clock, Filter, Search, Eye, ChevronDown,
-  Building2, User, DollarSign, Zap,
+  Building2, User, DollarSign, Zap, RefreshCw, Download,
   ArrowUpCircle, Printer, Banknote, CheckCircle2,
   Upload as UploadIcon, X, FileText, AlertTriangle, Trash2,
 } from 'lucide-react';
-import { getShifts, updateHandoverStatus, uploadDepositSlip, deleteShift, Shift, SHIFT_TYPES } from '../lib/shiftService';
+import {
+  getShifts, updateHandoverStatus, uploadDepositSlip, deleteShift,
+  recalculateShiftTotals, recalculateAllShiftTotals,
+  getShiftSessionsWithBilling,
+  Shift, SHIFT_TYPES
+} from '../lib/shiftService';
+import { generateShiftSessionReportPDF, generateMoneyHandoverLetterPDF } from '../lib/pdfReportService';
 import { getStations } from '../lib/stationService';
 import { supabase } from '../lib/supabase';
 import { Database } from '../lib/database.types';
@@ -51,6 +57,13 @@ export default function ShiftManagement() {
   // Delete confirmation
   const [deletingShiftId, setDeletingShiftId] = useState<string | null>(null);
 
+  // Recalculation
+  const [recalculating, setRecalculating] = useState(false);
+  const [recalcSingleId, setRecalcSingleId] = useState<string | null>(null);
+
+  // PDF generation
+  const [generatingPdf, setGeneratingPdf] = useState<string | null>(null);
+
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
@@ -86,9 +99,14 @@ export default function ShiftManagement() {
     try {
       const { data, error } = await supabase
         .from('charging_sessions')
-        .select('*')
+        .select(`
+          *, 
+          billing_calculations (
+            id, total_amount, subtotal, fees
+          )
+        `)
         .eq('shift_id', shiftId)
-        .order('start_time', { ascending: true });
+        .order('start_ts', { ascending: true });
       if (error) throw error;
       setShiftSessions(data || []);
     } catch (err) {
@@ -154,6 +172,64 @@ export default function ShiftManagement() {
     }
   }
 
+  async function handleRecalculateAll() {
+    setRecalculating(true);
+    try {
+      const result = await recalculateAllShiftTotals();
+      alert(`✅ Recalculated ${result.shifts_updated} shifts — Total: ${result.total_kwh.toFixed(2)} kWh, ${result.total_amount_jod.toFixed(3)} JOD`);
+      await loadData();
+    } catch (err) {
+      console.error('Failed to recalculate:', err);
+      alert('Failed to recalculate shift totals');
+    } finally {
+      setRecalculating(false);
+    }
+  }
+
+  async function handleRecalculateSingle(shiftId: string) {
+    setRecalcSingleId(shiftId);
+    try {
+      const result = await recalculateShiftTotals(shiftId);
+      alert(`✅ Recalculated: ${result.session_count} sessions — ${result.total_kwh} kWh, ${result.total_amount_jod} JOD`);
+      await loadData();
+      if (selectedShift?.id === shiftId) {
+        const updated = shifts.find(s => s.id === shiftId);
+        if (updated) setSelectedShift({ ...updated, total_kwh: result.total_kwh, total_amount_jod: result.total_amount_jod });
+      }
+    } catch (err) {
+      console.error('Failed to recalculate:', err);
+      alert('Failed to recalculate shift totals');
+    } finally {
+      setRecalcSingleId(null);
+    }
+  }
+
+  async function handlePrintSessionReport(shift: Shift) {
+    setGeneratingPdf('session');
+    try {
+      const sessions = await getShiftSessionsWithBilling(shift.id);
+      await generateShiftSessionReportPDF(shift as any, sessions);
+    } catch (err) {
+      console.error('Failed to generate session report:', err);
+      alert('Failed to generate PDF report');
+    } finally {
+      setGeneratingPdf(null);
+    }
+  }
+
+  async function handlePrintHandoverLetter(shift: Shift) {
+    setGeneratingPdf('handover');
+    try {
+      const sessions = await getShiftSessionsWithBilling(shift.id);
+      await generateMoneyHandoverLetterPDF(shift as any, sessions.length);
+    } catch (err) {
+      console.error('Failed to generate handover letter:', err);
+      alert('Failed to generate PDF');
+    } finally {
+      setGeneratingPdf(null);
+    }
+  }
+
   const filteredShifts = shifts.filter(s => {
     if (!searchQuery) return true;
     const q = searchQuery.toLowerCase();
@@ -170,9 +246,19 @@ export default function ShiftManagement() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h2 className="text-2xl font-bold text-gray-900">Shift Management</h2>
-        <p className="text-gray-600 mt-1">Track shifts, money handover, and bank deposits</p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Shift Management</h2>
+          <p className="text-gray-600 mt-1">Track shifts, money handover, and bank deposits</p>
+        </div>
+        <button
+          onClick={handleRecalculateAll}
+          disabled={recalculating}
+          className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          <RefreshCw size={16} className={recalculating ? 'animate-spin' : ''} />
+          {recalculating ? 'Recalculating...' : '⚡ Recalculate All Totals'}
+        </button>
       </div>
 
       {/* Stats Cards */}
@@ -340,6 +426,14 @@ export default function ShiftManagement() {
                             <Eye size={16} />
                           </button>
                           <button
+                            onClick={() => handleRecalculateSingle(shift.id)}
+                            disabled={recalcSingleId === shift.id}
+                            className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors disabled:opacity-50"
+                            title="Recalculate Totals"
+                          >
+                            <RefreshCw size={16} className={recalcSingleId === shift.id ? 'animate-spin' : ''} />
+                          </button>
+                          <button
                             onClick={() => setDeletingShiftId(shift.id)}
                             className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                             title="Delete Shift"
@@ -485,21 +579,44 @@ export default function ShiftManagement() {
                         </tr>
                       </thead>
                       <tbody>
-                        {shiftSessions.map((session: any, idx: number) => (
+                        {shiftSessions.map((session: any, idx: number) => {
+                          const billingAmount = session.billing_calculations?.[0]?.total_amount || 0;
+                          return (
                           <tr key={session.id} className="border-t border-gray-100">
                             <td className="px-3 py-2 text-gray-500">{idx + 1}</td>
                             <td className="px-3 py-2 font-mono">{session.transaction_id}</td>
                             <td className="px-3 py-2">{session.card_number}</td>
-                            <td className="px-3 py-2">{session.start_time?.replace('T', ' ').substring(0, 19)}</td>
-                            <td className="px-3 py-2">{session.end_time?.replace('T', ' ').substring(0, 19)}</td>
-                            <td className="px-3 py-2 text-right font-mono">{Number(session.kwh_consumed || 0).toFixed(2)}</td>
-                            <td className="px-3 py-2 text-right font-mono font-medium">{Number(session.total_cost || 0).toFixed(3)}</td>
+                            <td className="px-3 py-2">{session.start_ts?.replace('T', ' ').substring(0, 19)}</td>
+                            <td className="px-3 py-2">{session.end_ts?.replace('T', ' ').substring(0, 19)}</td>
+                            <td className="px-3 py-2 text-right font-mono">{Number(session.energy_consumed_kwh || 0).toFixed(2)}</td>
+                            <td className="px-3 py-2 text-right font-mono font-medium">{Number(billingAmount || 0).toFixed(3)}</td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
                 )}
+              </div>
+
+              {/* Print / Download Buttons */}
+              <div className="flex gap-3">
+                <button
+                  onClick={() => handlePrintSessionReport(selectedShift)}
+                  disabled={generatingPdf !== null}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                >
+                  <FileText size={16} />
+                  {generatingPdf === 'session' ? 'Generating...' : 'Print Session Report'}
+                </button>
+                <button
+                  onClick={() => handlePrintHandoverLetter(selectedShift)}
+                  disabled={generatingPdf !== null}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                >
+                  <Download size={16} />
+                  {generatingPdf === 'handover' ? 'Generating...' : 'Print Handover Letter'}
+                </button>
               </div>
 
               {/* Notes */}

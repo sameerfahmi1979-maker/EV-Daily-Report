@@ -498,33 +498,51 @@ export async function countPendingSessions(filters?: SessionFilters): Promise<nu
 }
 
 export async function getPendingSessionIds(filters?: SessionFilters): Promise<string[]> {
-  let query = supabase
-    .from('charging_sessions')
-    .select('id')
-    .eq('has_billing_calculation', false)
-    .order('start_ts', { ascending: true });
+  const allIds: string[] = [];
+  const PAGE_SIZE = 1000;
+  let offset = 0;
+  let hasMore = true;
 
-  if (filters?.stationId) {
-    query = query.eq('station_id', filters.stationId);
+  // Paginate to get ALL pending session IDs (PostgREST defaults to 1000 rows)
+  while (hasMore) {
+    let query = supabase
+      .from('charging_sessions')
+      .select('id')
+      .eq('has_billing_calculation', false)
+      .order('start_ts', { ascending: true })
+      .range(offset, offset + PAGE_SIZE - 1);
+
+    if (filters?.stationId) {
+      query = query.eq('station_id', filters.stationId);
+    }
+
+    if (filters?.startDate) {
+      query = query.gte('start_ts', filters.startDate);
+    }
+
+    if (filters?.endDate) {
+      query = query.lte('start_ts', filters.endDate);
+    }
+
+    if (filters?.searchTerm) {
+      const searchTerm = `%${filters.searchTerm}%`;
+      query = query.or(`transaction_id.ilike.${searchTerm},card_number.ilike.${searchTerm},charge_id.ilike.${searchTerm}`);
+    }
+
+    const { data, error } = await query;
+
+    if (error) throw error;
+
+    if (data && data.length > 0) {
+      allIds.push(...data.map(s => s.id));
+      offset += PAGE_SIZE;
+      hasMore = data.length === PAGE_SIZE;
+    } else {
+      hasMore = false;
+    }
   }
 
-  if (filters?.startDate) {
-    query = query.gte('start_ts', filters.startDate);
-  }
-
-  if (filters?.endDate) {
-    query = query.lte('start_ts', filters.endDate);
-  }
-
-  if (filters?.searchTerm) {
-    const searchTerm = `%${filters.searchTerm}%`;
-    query = query.or(`transaction_id.ilike.${searchTerm},card_number.ilike.${searchTerm},charge_id.ilike.${searchTerm}`);
-  }
-
-  const { data, error } = await query;
-
-  if (error) throw error;
-  return (data || []).map(s => s.id);
+  return allIds;
 }
 
 export interface ValidationResult {
@@ -1081,9 +1099,68 @@ export function formatJOD(amount: number | string): string {
 }
 
 // =============================================
-// OPTIMIZED: Server-side batch billing via single RPC call
-// Replaces N × (getRate + getPeriods + splitSession + allocateEnergy + save) calls
-// with ONE PostgreSQL function call that processes the entire batch
+// TURBO: Server-side bulk billing via single RPC call
+// Processes ALL sessions in ONE PostgreSQL transaction
+// Eliminates all HTTP round-trips — everything runs on the DB server
+// =============================================
+export interface TurboBulkResult {
+  total: number;
+  successful: number;
+  failed: number;
+  skipped: number;
+  errors: Array<{ sessionId: string; error: string }>;
+  elapsed_ms: number;
+}
+
+export async function turboBulkCalculateBilling(
+  sessionIds: string[],
+  recalculate: boolean = false
+): Promise<TurboBulkResult> {
+  console.log(`[Turbo Billing] Starting server-side calculation for ${sessionIds.length} sessions (recalculate: ${recalculate})`);
+
+  const { data, error } = await (supabase.rpc as any)('turbo_bulk_calculate_billing', {
+    p_session_ids: sessionIds,
+    p_recalculate: recalculate
+  });
+
+  if (error) {
+    console.error('[Turbo Billing] RPC error:', error);
+    throw new Error(`Turbo bulk billing failed: ${error.message}`);
+  }
+
+  const result = data as TurboBulkResult;
+  console.log(`[Turbo Billing] Complete in ${result.elapsed_ms}ms: ${result.successful} successful, ${result.failed} failed, ${result.skipped} skipped`);
+
+  return result;
+}
+
+export async function turboCalculateAllPending(
+  filters?: SessionFilters
+): Promise<TurboBulkResult> {
+  // Call the server-side function that finds AND processes all pending sessions
+  // No more 1000-row PostgREST limit — everything runs on the database server
+  console.log(`[Turbo Billing] Starting turbo_calculate_all_pending (server-side)`);
+
+  const stationId = filters?.stationId || null;
+
+  const { data, error } = await (supabase.rpc as any)('turbo_calculate_all_pending', {
+    p_station_id: stationId,
+    p_batch_size: 5000
+  });
+
+  if (error) {
+    console.error('[Turbo Billing] RPC error:', error);
+    throw new Error(`Turbo calculate all pending failed: ${error.message}`);
+  }
+
+  const result = data as TurboBulkResult;
+  console.log(`[Turbo Billing] All pending complete in ${result.elapsed_ms}ms: ${result.successful} successful, ${result.failed} failed, ${result.skipped} skipped`);
+
+  return result;
+}
+
+// =============================================
+// LEGACY: Server-side batch billing via single RPC call (kept for backward compatibility)
 // =============================================
 export interface BatchBillingResult {
   total_kwh: number;

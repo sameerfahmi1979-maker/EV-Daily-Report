@@ -7,14 +7,14 @@ import {
   getBillingCalculation,
   formatJOD,
   BillingBreakdown,
-  recalculateMultipleSessions,
   BulkRecalculationResult,
   SessionFilters,
   countPendingSessions,
-  calculateAllPendingSessions,
   CalculationProgress,
   validatePendingSessions,
-  ValidationResult
+  ValidationResult,
+  turboBulkCalculateBilling,
+  turboCalculateAllPending
 } from '../lib/billingService';
 import { getStations } from '../lib/stationService';
 import BillingBreakdownViewer from './BillingBreakdownViewer';
@@ -23,7 +23,7 @@ import BulkRecalculateConfirmDialog from './BulkRecalculateConfirmDialog';
 import CalculateAllPendingDialog from './CalculateAllPendingDialog';
 import CalculationProgressDialog from './CalculationProgressDialog';
 import DateRangeSelector from './DateRangeSelector';
-import { differenceInMinutes, parseISO, format as formatDate, startOfMonth, endOfDay } from 'date-fns';
+import { differenceInMinutes, parseISO, format as formatDate, startOfMonth, endOfDay, subDays } from 'date-fns';
 import { getInvoiceData, generateInvoicePDF } from '../lib/reportService';
 import { Database } from '../lib/database.types';
 
@@ -61,7 +61,7 @@ export default function SessionList() {
   const [filters, setFilters] = useState<SessionFilters>({
     stationId: '',
     billingStatus: 'all',
-    startDate: formatDate(startOfMonth(new Date()), 'yyyy-MM-dd'),
+    startDate: formatDate(subDays(new Date(), 30), 'yyyy-MM-dd'),
     endDate: formatDate(endOfDay(new Date()), 'yyyy-MM-dd'),
     searchTerm: '',
     page: 1,
@@ -131,6 +131,7 @@ export default function SessionList() {
 
   async function loadPendingCount() {
     try {
+      // Use same filters as the table so the count matches what user sees
       const count = await countPendingSessions(filters);
       setPendingCount(count);
     } catch (err) {
@@ -156,7 +157,7 @@ export default function SessionList() {
     setFilters({
       stationId: '',
       billingStatus: 'all',
-      startDate: formatDate(startOfMonth(new Date()), 'yyyy-MM-dd'),
+      startDate: formatDate(subDays(new Date(), 30), 'yyyy-MM-dd'),
       endDate: formatDate(endOfDay(new Date()), 'yyyy-MM-dd'),
       searchTerm: '',
       page: 1,
@@ -270,10 +271,23 @@ export default function SessionList() {
       setError(null);
       setBulkResult(null);
 
-      const result = await recalculateMultipleSessions(Array.from(selectedSessions));
-      setBulkResult(result);
+      // Use turbo server-side RPC — processes ALL selected sessions in ONE call
+      const turboResult = await turboBulkCalculateBilling(
+        Array.from(selectedSessions),
+        true // recalculate mode — replaces existing billing data
+      );
+
+      // Map turbo result to existing BulkRecalculationResult interface
+      setBulkResult({
+        total: turboResult.total,
+        successful: turboResult.successful,
+        failed: turboResult.failed,
+        skipped: turboResult.skipped,
+        errors: turboResult.errors
+      });
 
       await loadSessions();
+      await loadPendingCount();
       setSelectedSessions(new Set());
     } catch (err) {
       console.error('Failed to bulk recalculate:', err);
@@ -344,14 +358,28 @@ export default function SessionList() {
         pageSize: 50
       };
 
-      await calculateAllPendingSessions(
-        allPendingFilters,
-        (progress) => {
-          setCalculationProgress(progress);
-        },
-        10,
-        skipMissingRates
-      );
+      // Show initial progress
+      setCalculationProgress({
+        total: pendingCount,
+        processed: 0,
+        successful: 0,
+        failed: 0,
+        skipped: 0,
+        errors: []
+      });
+
+      // Use turbo server-side RPC — ONE call processes everything
+      const turboResult = await turboCalculateAllPending(allPendingFilters);
+
+      // Update progress with final results
+      setCalculationProgress({
+        total: turboResult.total,
+        processed: turboResult.total,
+        successful: turboResult.successful,
+        failed: turboResult.failed,
+        skipped: turboResult.skipped,
+        errors: turboResult.errors
+      });
 
       setIsCalculationComplete(true);
       await loadSessions();
@@ -589,24 +617,46 @@ export default function SessionList() {
         </div>
 
         {showFilters && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-gray-200">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
-              <input
-                type="date"
-                value={filters.startDate}
-                onChange={(e) => handleFilterChange('startDate', e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
-              <input
-                type="date"
-                value={filters.endDate}
-                onChange={(e) => handleFilterChange('endDate', e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
+          <div className="pt-4 border-t border-gray-200">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                <input
+                  type="date"
+                  defaultValue={filters.startDate}
+                  key={`start-${filters.startDate}`}
+                  onBlur={(e) => {
+                    if (e.target.value !== filters.startDate) {
+                      handleFilterChange('startDate', e.target.value);
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handleFilterChange('startDate', (e.target as HTMLInputElement).value);
+                    }
+                  }}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                <input
+                  type="date"
+                  defaultValue={filters.endDate}
+                  key={`end-${filters.endDate}`}
+                  onBlur={(e) => {
+                    if (e.target.value !== filters.endDate) {
+                      handleFilterChange('endDate', e.target.value);
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handleFilterChange('endDate', (e.target as HTMLInputElement).value);
+                    }
+                  }}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
             </div>
           </div>
         )}

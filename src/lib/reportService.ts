@@ -4,6 +4,105 @@ import * as XLSX from 'xlsx';
 import { format } from 'date-fns';
 import { supabase } from './supabase';
 import { formatJOD } from './billingService';
+import { getAllSettings } from './settingsService';
+
+// ── Paginated fetch (bypasses Supabase 1000-row default limit) ──
+const PAGE_SIZE = 1000;
+
+async function fetchAllRows(
+  tableName: string,
+  selectStr: string,
+  buildFilters: (q: any) => any,
+  orderCol = 'start_ts',
+  ascending = false
+): Promise<any[]> {
+  let allData: any[] = [];
+  let from = 0;
+  let hasMore = true;
+  while (hasMore) {
+    let q = supabase.from(tableName as any).select(selectStr).order(orderCol, { ascending }).range(from, from + PAGE_SIZE - 1);
+    q = buildFilters(q);
+    const { data, error } = await q;
+    if (error) throw error;
+    if (!data || data.length === 0) { hasMore = false; break; }
+    allData = allData.concat(data);
+    from += PAGE_SIZE;
+    if (data.length < PAGE_SIZE) hasMore = false;
+  }
+  return allData;
+}
+
+// ── Branded PDF header with logo ──
+async function addBrandedPdfHeader(doc: jsPDF, title: string, subtitle?: string): Promise<number> {
+  const s = await getAllSettings();
+  let y = 15;
+  let logoWidth = 0;
+
+  // Logo — fetch via API and embed as base64
+  if (s.company_logo_url) {
+    try {
+      const resp = await fetch(s.company_logo_url);
+      if (resp.ok) {
+        const blob = await resp.blob();
+        const base64 = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(blob);
+        });
+        const logoH = 15;
+        const img = new Image();
+        img.src = base64;
+        await new Promise<void>((res) => { img.onload = () => res(); img.onerror = () => res(); });
+        const aspect = (img.naturalWidth || 1) / (img.naturalHeight || 1);
+        logoWidth = logoH * aspect;
+        doc.addImage(base64, 'PNG', 14, y - 5, logoWidth, logoH);
+      }
+    } catch (e) { console.warn('Logo load failed:', e); }
+  }
+
+  const textX = logoWidth > 0 ? 14 + logoWidth + 4 : 14;
+  doc.setFontSize(16);
+  doc.setFont('helvetica', 'bold');
+  doc.text(s.company_name || 'EV Charging Station', textX, y);
+  y += 6;
+  if (s.company_address && s.show_company_address !== 'false') {
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.text(s.company_address, textX, y);
+    y += 4;
+  }
+  const parts: string[] = [];
+  if (s.company_phone) parts.push(`Tel: ${s.company_phone}`);
+  if (s.company_email) parts.push(`Email: ${s.company_email}`);
+  if (parts.length) { doc.setFontSize(7); doc.text(parts.join('  |  '), textX, y); y += 5; }
+  if (logoWidth > 0) y = Math.max(y, 28);
+
+  doc.setDrawColor(200); doc.setLineWidth(0.5);
+  doc.line(14, y, doc.internal.pageSize.width - 14, y);
+  y += 5;
+
+  doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.setTextColor(30, 58, 138);
+  doc.text(title, 14, y); y += 5;
+  if (subtitle) {
+    doc.setFontSize(9); doc.setFont('helvetica', 'normal'); doc.setTextColor(100);
+    doc.text(subtitle, 14, y); y += 5;
+  }
+  doc.setTextColor(0); y += 2;
+  return y;
+}
+
+function addBrandedFooter(doc: jsPDF, footerText?: string) {
+  const count = doc.getNumberOfPages();
+  for (let i = 1; i <= count; i++) {
+    doc.setPage(i);
+    const h = doc.internal.pageSize.height;
+    const w = doc.internal.pageSize.width;
+    doc.setFontSize(7); doc.setTextColor(150);
+    doc.text(`Page ${i} of ${count}`, w - 14, h - 8, { align: 'right' });
+    if (footerText) doc.text(footerText, 14, h - 8);
+    doc.text(`Generated: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, w / 2, h - 8, { align: 'center' });
+  }
+}
 
 export interface InvoiceData {
   invoiceNumber: string;
@@ -538,195 +637,95 @@ export async function exportSessionsToCSV(startDate: Date, endDate: Date, statio
 }
 
 export async function exportSessionsToPDF(startDate: Date, endDate: Date, stationId?: string, includeCharts: boolean = true, startTime?: string, endTime?: string, cardNumber?: string): Promise<number> {
+  const settings = await getAllSettings();
   let stationName: string | null = null;
   let operatorName: string | null = null;
 
   if (stationId) {
-    const { data: stationData } = await supabase
-      .from('stations')
-      .select('name')
-      .eq('id', stationId)
-      .maybeSingle();
+    const { data: stationData } = await supabase.from('stations').select('name').eq('id', stationId).maybeSingle();
     stationName = stationData?.name || null;
   }
-
   if (cardNumber) {
-    const { data: operatorData } = await supabase
-      .from('operators')
-      .select('name')
-      .eq('card_number', cardNumber)
-      .maybeSingle();
+    const { data: operatorData } = await supabase.from('operators').select('name').eq('card_number', cardNumber).maybeSingle();
     operatorName = operatorData?.name || null;
   }
 
-  let query = supabase
-    .from('charging_sessions')
-    .select(`
-      *,
-      stations (
-        name,
-        station_code
-      ),
-      billing_calculations (
-        total_amount
-      )
-    `)
-    .order('start_ts', { ascending: false })
-    .limit(500);
+  const startTimestamp = startTime ? `${format(startDate, 'yyyy-MM-dd')}T${startTime}:00` : `${format(startDate, 'yyyy-MM-dd')}T00:00:00`;
+  const endTimestamp = endTime ? `${format(endDate, 'yyyy-MM-dd')}T${endTime}:59` : `${format(endDate, 'yyyy-MM-dd')}T23:59:59`;
 
-  const startTimestamp = startTime
-    ? `${format(startDate, 'yyyy-MM-dd')}T${startTime}:00`
-    : `${format(startDate, 'yyyy-MM-dd')}T00:00:00`;
-  query = query.gte('start_ts', startTimestamp);
+  // Paginated fetch — ALL records
+  const sessions = await fetchAllRows(
+    'charging_sessions',
+    '*, stations(name, station_code), billing_calculations(total_amount)',
+    (q: any) => {
+      q = q.gte('start_ts', startTimestamp).lte('start_ts', endTimestamp);
+      if (stationId) q = q.eq('station_id', stationId);
+      if (cardNumber) q = q.eq('card_number', cardNumber);
+      return q;
+    }
+  );
 
-  const endTimestamp = endTime
-    ? `${format(endDate, 'yyyy-MM-dd')}T${endTime}:59`
-    : `${format(endDate, 'yyyy-MM-dd')}T23:59:59`;
-  query = query.lte('start_ts', endTimestamp);
-
-  if (stationId) {
-    query = query.eq('station_id', stationId);
-  }
-
-  if (cardNumber) {
-    query = query.eq('card_number', cardNumber);
-  }
-
-  const { data: sessions, error } = await query;
-
-  if (error) throw error;
-
-  const totalEnergy = sessions?.reduce((sum, s: any) => sum + parseFloat(s.energy_consumed_kwh), 0) || 0;
-  const totalDuration = sessions?.reduce((sum, s: any) => sum + parseFloat(s.duration_minutes), 0) || 0;
-  const totalIncome = sessions?.reduce((sum, s: any) => {
+  const totalEnergy = sessions.reduce((sum, s: any) => sum + parseFloat(s.energy_consumed_kwh || 0), 0);
+  const totalDuration = sessions.reduce((sum, s: any) => sum + parseFloat(s.duration_minutes || 0), 0);
+  const totalIncome = sessions.reduce((sum, s: any) => {
     const billing = s.billing_calculations?.[0];
     return sum + (billing ? parseFloat(billing.total_amount) : 0);
-  }, 0) || 0;
+  }, 0);
 
   const doc = new jsPDF({ orientation: 'landscape', compress: true });
 
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16);
-  doc.text('Charging Sessions Report', 148.5, 15, { align: 'center' });
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
+  // Branded header with logo
   const periodText = startTime || endTime
-    ? `Period: ${format(startDate, 'MMM dd, yyyy')} ${startTime || '00:00'} - ${format(endDate, 'MMM dd, yyyy')} ${endTime || '23:59'}`
-    : `Period: ${format(startDate, 'MMM dd, yyyy')} - ${format(endDate, 'MMM dd, yyyy')}`;
-  doc.text(periodText, 148.5, 22, { align: 'center' });
+    ? `${format(startDate, 'dd/MM/yyyy')} ${startTime || '00:00'} – ${format(endDate, 'dd/MM/yyyy')} ${endTime || '23:59'}`
+    : `${format(startDate, 'dd/MM/yyyy')} – ${format(endDate, 'dd/MM/yyyy')}`;
+  let startY = await addBrandedPdfHeader(doc, 'Charging Sessions Report', periodText);
 
-  let startY = 28;
+  // Filters
+  const filterParts = [`Period: ${periodText}`];
+  if (stationName) filterParts.push(`Station: ${stationName}`);
+  if (operatorName && cardNumber) filterParts.push(`Operator: ${operatorName} (${cardNumber})`);
+  doc.setFontSize(8); doc.setFont('helvetica', 'normal');
+  doc.text(filterParts.join('  •  '), 14, startY); startY += 5;
 
-  doc.setDrawColor(220, 220, 220);
-  doc.setFillColor(250, 250, 250);
-  doc.roundedRect(20, startY, 257, 20, 2, 2, 'FD');
+  // Summary
+  doc.setFillColor(240, 248, 255); doc.rect(14, startY - 3, doc.internal.pageSize.width - 28, 14, 'F');
+  doc.setFontSize(8); doc.setFont('helvetica', 'bold');
+  doc.text(`Total Sessions: ${sessions.length}  |  Energy: ${totalEnergy.toFixed(2)} kWh  |  Duration: ${totalDuration.toFixed(0)} min  |  Revenue: ${formatJOD(totalIncome)}`, 18, startY + 5);
+  startY += 16;
 
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.text('Report Filters Applied', 25, startY + 5);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  let filterText = `Date Range: ${format(startDate, 'MMM dd, yyyy')}`;
-  if (startTime) filterText += ` ${startTime}`;
-  filterText += ` to ${format(endDate, 'MMM dd, yyyy')}`;
-  if (endTime) filterText += ` ${endTime}`;
-
-  if (stationName) {
-    filterText += ` • Station: ${stationName}`;
-  }
-
-  if (operatorName && cardNumber) {
-    filterText += ` • Operator: ${operatorName} (${cardNumber})`;
-  }
-
-  doc.text(filterText, 25, startY + 12);
-
-  startY = 53;
-
-  doc.setFillColor(240, 248, 255);
-  doc.rect(20, startY - 5, 257, 25, 'F');
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.text('Summary Metrics', 25, startY);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  startY += 7;
-  doc.text(`Total Energy: ${totalEnergy.toFixed(2)} kWh`, 25, startY);
-  doc.text(`Total Duration: ${totalDuration.toFixed(0)} minutes`, 85, startY);
-  doc.text(`Total Income: ${totalIncome.toFixed(2)} JOD`, 145, startY);
-
-  startY += 6;
-  doc.text(`Total Sessions: ${sessions?.length || 0}`, 25, startY);
-
-  startY += 12;
-
-  const tableData = sessions?.slice(0, 100).map((session: any) => [
-    session.transaction_id,
+  // Table — ALL records, no slice
+  const tableData = sessions.map((session: any) => [
+    session.transaction_id || '',
     (session.stations?.name || 'Unknown').substring(0, 20),
     format(new Date(session.start_ts), 'MM/dd/yy'),
     format(new Date(session.start_ts), 'HH:mm'),
-    format(new Date(session.end_ts), 'HH:mm'),
-    parseFloat(session.duration_minutes).toFixed(0),
-    parseFloat(session.energy_consumed_kwh).toFixed(2),
+    session.end_ts ? format(new Date(session.end_ts), 'HH:mm') : '-',
+    parseFloat(session.duration_minutes || 0).toFixed(0),
+    parseFloat(session.energy_consumed_kwh || 0).toFixed(2),
     session.billing_calculations?.[0]?.total_amount
       ? parseFloat(session.billing_calculations[0].total_amount).toFixed(2)
       : '-'
-  ]) || [];
-
-  const footerData = [[
-    '',
-    '',
-    '',
-    '',
-    'TOTALS',
-    totalDuration.toFixed(0),
-    totalEnergy.toFixed(2),
-    totalIncome.toFixed(2)
-  ]];
+  ]);
 
   autoTable(doc, {
-    startY: startY,
+    startY,
     head: [['Transaction ID', 'Station', 'Date', 'Start', 'End', 'Duration\n(min)', 'Energy\n(kWh)', 'Cost\n(JOD)']],
     body: tableData,
-    foot: footerData,
+    foot: [['', '', '', '', 'TOTALS', totalDuration.toFixed(0), totalEnergy.toFixed(2), totalIncome.toFixed(2)]],
     theme: 'plain',
-    headStyles: {
-      fillColor: [245, 245, 245],
-      textColor: [0, 0, 0],
-      fontSize: 8,
-      fontStyle: 'bold',
-      lineWidth: 0.1,
-      lineColor: [200, 200, 200]
-    },
-    bodyStyles: {
-      fontSize: 7,
-      lineWidth: 0.1,
-      lineColor: [240, 240, 240]
-    },
-    footStyles: {
-      fillColor: [230, 230, 230],
-      textColor: [0, 0, 0],
-      fontSize: 8,
-      fontStyle: 'bold',
-      lineWidth: 0.2,
-      lineColor: [200, 200, 200]
-    },
+    headStyles: { fillColor: [30, 58, 138], textColor: 255, fontSize: 7, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 6, lineWidth: 0.1, lineColor: [240, 240, 240] },
+    footStyles: { fillColor: [230, 230, 230], textColor: [0, 0, 0], fontSize: 7, fontStyle: 'bold' },
     columnStyles: {
-      0: { cellWidth: 38 },
-      1: { cellWidth: 45 },
-      2: { cellWidth: 25 },
-      3: { halign: 'center', cellWidth: 20 },
-      4: { halign: 'center', cellWidth: 20 },
-      5: { halign: 'right', cellWidth: 25 },
-      6: { halign: 'right', cellWidth: 25 },
+      0: { cellWidth: 38 }, 1: { cellWidth: 45 }, 2: { cellWidth: 25 },
+      3: { halign: 'center', cellWidth: 20 }, 4: { halign: 'center', cellWidth: 20 },
+      5: { halign: 'right', cellWidth: 25 }, 6: { halign: 'right', cellWidth: 25 },
       7: { halign: 'right', cellWidth: 25 }
     },
-    margin: { left: 20, right: 20 }
+    margin: { left: 14, right: 14 },
   });
+
+  addBrandedFooter(doc, settings.report_footer_text);
 
   const pdfBlob = doc.output('blob');
   const url = URL.createObjectURL(pdfBlob);
@@ -735,7 +734,6 @@ export async function exportSessionsToPDF(startDate: Date, endDate: Date, statio
   a.download = `sessions-${format(startDate, 'yyyy-MM-dd')}-to-${format(endDate, 'yyyy-MM-dd')}.pdf`;
   a.click();
   URL.revokeObjectURL(url);
-
   return pdfBlob.size;
 }
 
@@ -884,149 +882,70 @@ export async function exportBillingToCSV(startDate: Date, endDate: Date, station
 }
 
 export async function exportBillingToPDF(startDate: Date, endDate: Date, stationId?: string, includeCharts: boolean = true, startTime?: string, endTime?: string, cardNumber?: string): Promise<number> {
+  const settings = await getAllSettings();
   let stationName: string | null = null;
   let operatorName: string | null = null;
 
   if (stationId) {
-    const { data: stationData } = await supabase
-      .from('stations')
-      .select('name')
-      .eq('id', stationId)
-      .maybeSingle();
+    const { data: stationData } = await supabase.from('stations').select('name').eq('id', stationId).maybeSingle();
     stationName = stationData?.name || null;
   }
-
   if (cardNumber) {
-    const { data: operatorData } = await supabase
-      .from('operators')
-      .select('name')
-      .eq('card_number', cardNumber)
-      .maybeSingle();
+    const { data: operatorData } = await supabase.from('operators').select('name').eq('card_number', cardNumber).maybeSingle();
     operatorName = operatorData?.name || null;
   }
 
-  let query = supabase
-    .from('charging_sessions')
-    .select(`
-      transaction_id,
-      station_id,
-      start_ts,
-      duration_minutes,
-      energy_consumed_kwh,
-      stations (
-        name
-      ),
-      billing_calculations (
-        calculation_date,
-        subtotal,
-        total_amount
-      )
-    `)
-    .not('billing_calculations', 'is', null)
-    .order('start_ts', { ascending: false })
-    .limit(500);
+  const startTimestamp = startTime ? `${format(startDate, 'yyyy-MM-dd')}T${startTime}:00` : `${format(startDate, 'yyyy-MM-dd')}T00:00:00`;
+  const endTimestamp = endTime ? `${format(endDate, 'yyyy-MM-dd')}T${endTime}:59` : `${format(endDate, 'yyyy-MM-dd')}T23:59:59`;
 
-  const startTimestamp = startTime
-    ? `${format(startDate, 'yyyy-MM-dd')}T${startTime}:00`
-    : `${format(startDate, 'yyyy-MM-dd')}T00:00:00`;
-  query = query.gte('start_ts', startTimestamp);
+  // Paginated fetch — ALL billing records
+  const allSessions = await fetchAllRows(
+    'charging_sessions',
+    'transaction_id, station_id, start_ts, duration_minutes, energy_consumed_kwh, stations(name), billing_calculations(calculation_date, subtotal, total_amount)',
+    (q: any) => {
+      q = q.not('billing_calculations', 'is', null).gte('start_ts', startTimestamp).lte('start_ts', endTimestamp);
+      if (stationId) q = q.eq('station_id', stationId);
+      if (cardNumber) q = q.eq('card_number', cardNumber);
+      return q;
+    }
+  );
 
-  const endTimestamp = endTime
-    ? `${format(endDate, 'yyyy-MM-dd')}T${endTime}:59`
-    : `${format(endDate, 'yyyy-MM-dd')}T23:59:59`;
-  query = query.lte('start_ts', endTimestamp);
+  const filteredBillings = allSessions.filter((s: any) => s.billing_calculations && s.billing_calculations.length > 0);
 
-  if (stationId) {
-    query = query.eq('station_id', stationId);
-  }
-
-  if (cardNumber) {
-    query = query.eq('card_number', cardNumber);
-  }
-
-  const { data: sessions, error } = await query;
-
-  if (error) throw error;
-
-  const filteredBillings = sessions?.filter((s: any) => s.billing_calculations && s.billing_calculations.length > 0) || [];
-
-  const totalEnergy = filteredBillings?.reduce((sum, s: any) => {
-    const energy = s.energy_consumed_kwh;
-    return sum + (energy ? parseFloat(energy) : 0);
-  }, 0) || 0;
-
-  const totalDuration = filteredBillings?.reduce((sum, s: any) => {
-    const duration = s.duration_minutes;
-    return sum + (duration ? parseFloat(duration) : 0);
-  }, 0) || 0;
-
-  const totalIncome = filteredBillings?.reduce((sum, s: any) => {
+  const totalEnergy = filteredBillings.reduce((sum: number, s: any) => sum + parseFloat(s.energy_consumed_kwh || 0), 0);
+  const totalDuration = filteredBillings.reduce((sum: number, s: any) => sum + parseFloat(s.duration_minutes || 0), 0);
+  const totalIncome = filteredBillings.reduce((sum: number, s: any) => {
     const billing = s.billing_calculations?.[0];
     return sum + (billing ? parseFloat(billing.total_amount) : 0);
-  }, 0) || 0;
+  }, 0);
+  const totalSubtotal = filteredBillings.reduce((sum: number, s: any) => {
+    const billing = s.billing_calculations?.[0];
+    return sum + (billing ? parseFloat(billing.subtotal) : 0);
+  }, 0);
 
   const doc = new jsPDF({ orientation: 'landscape', compress: true });
 
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16);
-  doc.text('Billing Report', 148.5, 15, { align: 'center' });
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
+  // Branded header with logo
   const periodText = startTime || endTime
-    ? `Period: ${format(startDate, 'MMM dd, yyyy')} ${startTime || '00:00'} - ${format(endDate, 'MMM dd, yyyy')} ${endTime || '23:59'}`
-    : `Period: ${format(startDate, 'MMM dd, yyyy')} - ${format(endDate, 'MMM dd, yyyy')}`;
-  doc.text(periodText, 148.5, 22, { align: 'center' });
+    ? `${format(startDate, 'dd/MM/yyyy')} ${startTime || '00:00'} – ${format(endDate, 'dd/MM/yyyy')} ${endTime || '23:59'}`
+    : `${format(startDate, 'dd/MM/yyyy')} – ${format(endDate, 'dd/MM/yyyy')}`;
+  let startY = await addBrandedPdfHeader(doc, 'Billing Report', periodText);
 
-  let startY = 28;
+  // Filters
+  const filterParts = [`Period: ${periodText}`];
+  if (stationName) filterParts.push(`Station: ${stationName}`);
+  if (operatorName && cardNumber) filterParts.push(`Operator: ${operatorName} (${cardNumber})`);
+  doc.setFontSize(8); doc.setFont('helvetica', 'normal');
+  doc.text(filterParts.join('  •  '), 14, startY); startY += 5;
 
-  doc.setDrawColor(220, 220, 220);
-  doc.setFillColor(250, 250, 250);
-  doc.roundedRect(20, startY, 257, 20, 2, 2, 'FD');
+  // Summary
+  doc.setFillColor(240, 248, 255); doc.rect(14, startY - 3, doc.internal.pageSize.width - 28, 14, 'F');
+  doc.setFontSize(8); doc.setFont('helvetica', 'bold');
+  doc.text(`Transactions: ${filteredBillings.length}  |  Energy: ${totalEnergy.toFixed(2)} kWh  |  Duration: ${totalDuration.toFixed(0)} min  |  Revenue: ${formatJOD(totalIncome)}`, 18, startY + 5);
+  startY += 16;
 
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.text('Report Filters Applied', 25, startY + 5);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  let filterText = `Date Range: ${format(startDate, 'MMM dd, yyyy')}`;
-  if (startTime) filterText += ` ${startTime}`;
-  filterText += ` to ${format(endDate, 'MMM dd, yyyy')}`;
-  if (endTime) filterText += ` ${endTime}`;
-
-  if (stationName) {
-    filterText += ` • Station: ${stationName}`;
-  }
-
-  if (operatorName && cardNumber) {
-    filterText += ` • Operator: ${operatorName} (${cardNumber})`;
-  }
-
-  doc.text(filterText, 25, startY + 12);
-
-  startY = 53;
-
-  doc.setFillColor(240, 248, 255);
-  doc.rect(20, startY - 5, 257, 25, 'F');
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.text('Summary Metrics', 25, startY);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  startY += 7;
-  doc.text(`Total Energy: ${totalEnergy.toFixed(2)} kWh`, 25, startY);
-  doc.text(`Total Duration: ${totalDuration.toFixed(0)} minutes`, 85, startY);
-  doc.text(`Total Income: ${totalIncome.toFixed(2)} JOD`, 145, startY);
-
-  startY += 6;
-  doc.text(`Total Transactions: ${filteredBillings?.length || 0}`, 25, startY);
-
-  startY += 12;
-
-  const tableData = filteredBillings?.slice(0, 100).map((session: any) => {
+  // Table — ALL records
+  const tableData = filteredBillings.map((session: any) => {
     const billing = session.billing_calculations[0];
     return [
       session.transaction_id || '',
@@ -1036,59 +955,26 @@ export async function exportBillingToPDF(startDate: Date, endDate: Date, station
       parseFloat(billing.subtotal).toFixed(2),
       parseFloat(billing.total_amount).toFixed(2)
     ];
-  }) || [];
-
-  const totalSubtotal = filteredBillings?.reduce((sum, s: any) => {
-    const billing = s.billing_calculations?.[0];
-    return sum + (billing ? parseFloat(billing.subtotal) : 0);
-  }, 0) || 0;
-
-  const footerData = [[
-    '',
-    '',
-    '',
-    'TOTALS',
-    totalSubtotal.toFixed(2),
-    totalIncome.toFixed(2)
-  ]];
+  });
 
   autoTable(doc, {
-    startY: startY,
+    startY,
     head: [['Transaction ID', 'Station', 'Date', 'Time', 'Subtotal\n(JOD)', 'Total\n(JOD)']],
     body: tableData,
-    foot: footerData,
+    foot: [['', '', '', 'TOTALS', totalSubtotal.toFixed(2), totalIncome.toFixed(2)]],
     theme: 'plain',
-    headStyles: {
-      fillColor: [245, 245, 245],
-      textColor: [0, 0, 0],
-      fontSize: 8,
-      fontStyle: 'bold',
-      lineWidth: 0.1,
-      lineColor: [200, 200, 200]
-    },
-    bodyStyles: {
-      fontSize: 7,
-      lineWidth: 0.1,
-      lineColor: [240, 240, 240]
-    },
-    footStyles: {
-      fillColor: [230, 230, 230],
-      textColor: [0, 0, 0],
-      fontSize: 8,
-      fontStyle: 'bold',
-      lineWidth: 0.2,
-      lineColor: [200, 200, 200]
-    },
+    headStyles: { fillColor: [30, 58, 138], textColor: 255, fontSize: 7, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 6, lineWidth: 0.1, lineColor: [240, 240, 240] },
+    footStyles: { fillColor: [230, 230, 230], textColor: [0, 0, 0], fontSize: 7, fontStyle: 'bold' },
     columnStyles: {
-      0: { cellWidth: 50 },
-      1: { cellWidth: 60 },
-      2: { cellWidth: 30 },
-      3: { halign: 'center', cellWidth: 25 },
-      4: { halign: 'right', cellWidth: 30 },
+      0: { cellWidth: 50 }, 1: { cellWidth: 60 }, 2: { cellWidth: 30 },
+      3: { halign: 'center', cellWidth: 25 }, 4: { halign: 'right', cellWidth: 30 },
       5: { halign: 'right', cellWidth: 30 }
     },
-    margin: { left: 20, right: 20 }
+    margin: { left: 14, right: 14 },
   });
+
+  addBrandedFooter(doc, settings.report_footer_text);
 
   const pdfBlob = doc.output('blob');
   const url = URL.createObjectURL(pdfBlob);
@@ -1097,8 +983,8 @@ export async function exportBillingToPDF(startDate: Date, endDate: Date, station
   a.download = `billing-${format(startDate, 'yyyy-MM-dd')}-to-${format(endDate, 'yyyy-MM-dd')}.pdf`;
   a.click();
   URL.revokeObjectURL(url);
-
   return pdfBlob.size;
+
 }
 
 export async function generateMonthlySummary(month: Date): Promise<MonthlySummary> {

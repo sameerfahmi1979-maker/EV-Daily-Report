@@ -184,9 +184,7 @@ export function validateSession(session: ParsedSession, rowNumber: number): stri
       }
 
       const durationMin = (endMs - startMs) / (1000 * 60);
-      if (durationMin < 1) {
-        errors.push('Session duration must be at least 1 minute');
-      }
+      // Allow any duration — no minimum requirement
       if (durationMin > 1440) {
         errors.push('Session duration cannot exceed 24 hours');
       }
@@ -838,4 +836,24 @@ export function downloadSampleTemplate() {
   link.download = 'charging-sessions-template.csv';
   link.click();
   window.URL.revokeObjectURL(url);
+}
+
+/**
+ * Cascade-delete an import batch and ALL related records:
+ * billing_calculations → charging_sessions → shifts → import_batch
+ */
+export async function deleteImportBatchCascade(batchId: string): Promise<{
+  success: boolean;
+  filename: string;
+  billing_deleted: number;
+  sessions_deleted: number;
+  shifts_deleted: number;
+}> {
+  const { data, error } = await (supabase.rpc as any)('delete_import_batch_cascade', {
+    p_batch_id: batchId,
+  });
+
+  if (error) throw error;
+  if (!data?.success) throw new Error(data?.error || 'Failed to delete batch');
+  return data;
 }

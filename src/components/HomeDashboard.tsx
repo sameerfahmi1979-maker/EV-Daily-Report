@@ -1,35 +1,30 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Zap,
-  DollarSign,
-  Activity,
-  MapPin,
-  Leaf,
-  Calculator,
-  Database,
-  Loader2,
-  CheckCircle,
-  AlertCircle,
-  RefreshCw,
-  Download,
-  Clock,
-  AlertTriangle,
+  Zap, DollarSign, Activity, MapPin, Leaf, Calculator, Database,
+  Loader2, CheckCircle, AlertCircle, RefreshCw, Download, Clock,
+  AlertTriangle, ArrowUp, ArrowDown,
 } from 'lucide-react';
-import { DateRange, getDateRangePreset, getSummaryMetrics, getCO2ImpactMetrics, getEnergyTrend, getRevenueByStation, getConnectorTypeComparison, getBestTimeToCharge, getDailyTransactionsByConnector, getRecentActivity } from '../lib/analyticsService';
+import {
+  DateRange, getDateRangePreset, getSummaryMetrics, getEnergyTrend,
+  getRevenueByStation, getConnectorTypeComparison, getBestTimeToCharge,
+  getDailyTransactionsByConnector, getRecentActivity, EnergyGroupBy,
+} from '../lib/analyticsService';
 import { countPendingSessions, formatJOD } from '../lib/billingService';
+import { calculateEnvironmentalImpact, EnvironmentalImpact } from '../lib/environmentalImpactService';
 import { supabase } from '../lib/supabase';
-import { subDays } from 'date-fns';
+import { subDays, format } from 'date-fns';
 import DateRangeSelector from './DateRangeSelector';
-import CO2ImpactCard from './CO2ImpactCard';
 import EnergyTrendChart from './EnergyTrendChart';
 import RevenueChart from './RevenueChart';
 import ConnectorTypeChart from './ConnectorTypeChart';
 import BestTimeToChargeChart from './BestTimeToChargeChart';
 import DailyTransactionsChart from './DailyTransactionsChart';
-import { EnergyGroupBy } from '../lib/analyticsService';
-import { format } from 'date-fns';
+import PowerBITile from './PowerBITile';
+import SparklineChart from './SparklineChart';
+import EnvironmentalImpactPanel from './EnvironmentalImpactPanel';
 
-async function fetchHeatmapData(): Promise<{ day: number; hour: number; count: number }[]> {
+// ── Heatmap ──────────────────────────────────
+async function fetchHeatmapData() {
   const end = new Date();
   const start = subDays(end, 30);
   const { data, error } = await supabase
@@ -42,12 +37,12 @@ async function fetchHeatmapData(): Promise<{ day: number; hour: number; count: n
   const grid: number[][] = Array(7).fill(0).map(() => Array(24).fill(0));
   data.forEach((row: { start_ts: string }) => {
     const d = new Date(row.start_ts);
-    const day = d.getDay();
-    const hour = d.getHours();
-    grid[day][hour] += 1;
+    grid[d.getDay()][d.getHours()] += 1;
   });
   const result: { day: number; hour: number; count: number }[] = [];
-  for (let day = 0; day < 7; day++) for (let hour = 0; hour < 24; hour++) result.push({ day, hour, count: grid[day][hour] });
+  for (let day = 0; day < 7; day++)
+    for (let hour = 0; hour < 24; hour++)
+      result.push({ day, hour, count: grid[day][hour] });
   return result;
 }
 
@@ -55,43 +50,36 @@ function HeatmapGrid({ data }: { data: { day: number; hour: number; count: numbe
   const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const maxCount = Math.max(...data.map(d => d.count), 1);
   const getCell = (day: number, hour: number) => data.find(d => d.day === day && d.hour === hour)?.count ?? 0;
-  if (data.length === 0) {
-    return <div className="h-64 flex items-center justify-center text-gray-400 text-sm">No session data for last 30 days</div>;
-  }
+  if (data.length === 0) return <div className="h-40 flex items-center justify-center text-[#8888a0] text-sm">No data</div>;
   return (
     <div className="overflow-x-auto">
       <div className="inline-block min-w-0">
-        <div className="grid gap-0.5" style={{ gridTemplateColumns: '40px repeat(24, minmax(12px, 1fr))', gridTemplateRows: 'repeat(8, 24px)' }}>
-          <div className="text-xs text-gray-500 font-medium flex items-center" />
+        <div className="grid gap-0.5" style={{ gridTemplateColumns: '36px repeat(24, minmax(10px, 1fr))', gridTemplateRows: 'repeat(8, 20px)' }}>
+          <div />
           {Array.from({ length: 24 }, (_, h) => (
-            <div key={h} className="text-[10px] text-gray-500 flex items-center justify-center" title={`${h}:00`}>{h}</div>
+            <div key={h} className="text-[8px] text-[#8888a0] flex items-center justify-center">{h}</div>
           ))}
           {dayNames.map((name, day) => (
             <React.Fragment key={day}>
-              <div className="text-xs text-gray-600 flex items-center pr-1">{name}</div>
+              <div className="text-[10px] text-[#8888a0] flex items-center pr-1">{name}</div>
               {Array.from({ length: 24 }, (_, hour) => {
                 const count = getCell(day, hour);
                 const pct = maxCount > 0 ? (count / maxCount) * 100 : 0;
                 const intensity = pct === 0 ? 0 : Math.max(20, 20 + (pct / 100) * 80);
                 return (
-                  <div
-                    key={hour}
-                    className="rounded-sm border border-gray-100 transition-opacity hover:opacity-90"
-                    style={{ backgroundColor: `rgba(34, 197, 94, ${intensity / 100})` }}
-                    title={`${name} ${hour}:00 – ${count} session(s)`}
-                  />
+                  <div key={hour} className="rounded-sm"
+                    style={{ backgroundColor: `rgba(74, 144, 217, ${intensity / 100})` }}
+                    title={`${name} ${hour}:00 – ${count} session(s)`} />
                 );
               })}
             </React.Fragment>
           ))}
         </div>
-        <div className="flex items-center gap-2 mt-2 text-xs text-gray-500">
+        <div className="flex items-center gap-1 mt-1 text-[9px] text-[#8888a0]">
           <span>Less</span>
-          <div className="flex gap-0.5">
-            {[0, 25, 50, 75, 100].map((p) => (
-              <div key={p} className="w-4 h-3 rounded-sm" style={{ backgroundColor: `rgba(34, 197, 94, ${p / 100})` }} />
-            ))}
-          </div>
+          {[0, 25, 50, 75, 100].map(p => (
+            <div key={p} className="w-3 h-2 rounded-sm" style={{ backgroundColor: `rgba(74, 144, 217, ${p / 100})` }} />
+          ))}
           <span>More</span>
         </div>
       </div>
@@ -99,44 +87,55 @@ function HeatmapGrid({ data }: { data: { day: number; hour: number; count: numbe
   );
 }
 
-const WORLD_CITIES: { name: string; timeZone: string }[] = [
+// ── World Clock ──────────────────────────────
+const WORLD_CITIES = [
   { name: 'Amman', timeZone: 'Asia/Amman' },
   { name: 'Dubai', timeZone: 'Asia/Dubai' },
   { name: 'Riyadh', timeZone: 'Asia/Riyadh' },
   { name: 'London', timeZone: 'Europe/London' },
   { name: 'New York', timeZone: 'America/New_York' },
 ];
-
-function WorldClockDigital() {
+function WorldClock() {
   const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(t);
-  }, []);
+  useEffect(() => { const t = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(t); }, []);
   return (
-    <div className="bg-white rounded-xl shadow-md border border-gray-200 p-6">
-      <div className="flex items-center gap-2 mb-4">
-        <Clock className="w-5 h-5 text-gray-700" />
-        <h3 className="text-lg font-semibold text-gray-900">World time</h3>
-      </div>
-      <p className="text-sm text-gray-500 mb-4">Current time in key locations</p>
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-        {WORLD_CITIES.map(({ name, timeZone }) => (
-          <div key={timeZone} className="bg-gray-50 rounded-lg p-3 border border-gray-100">
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{name}</p>
-            <p className="text-lg font-bold text-gray-900 mt-1 font-mono">
-              {now.toLocaleTimeString('en-GB', { timeZone, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
-            </p>
-            <p className="text-xs text-gray-500 mt-0.5">
-              {now.toLocaleDateString('en-GB', { timeZone, weekday: 'short', day: 'numeric', month: 'short' })}
-            </p>
-          </div>
-        ))}
+    <div className="grid grid-cols-5 gap-2">
+      {WORLD_CITIES.map(({ name, timeZone }) => (
+        <div key={timeZone} className="bg-[#1a1a2e] rounded-lg p-2 text-center border border-[#3a3a4e]">
+          <p className="text-[9px] text-[#8888a0] uppercase tracking-wider">{name}</p>
+          <p className="text-sm font-bold text-[#e0e0e8] mt-0.5 font-mono">
+            {now.toLocaleTimeString('en-GB', { timeZone, hour: '2-digit', minute: '2-digit', hour12: false })}
+          </p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── KPI Card ──────────────────────────────────
+function KPICard({ label, value, sub, icon: Icon, color, sparkData }: {
+  label: string; value: string; sub?: string; icon: any; color: string; sparkData?: number[];
+}) {
+  return (
+    <div className="bg-[#2a2a3e] border border-[#3a3a4e] rounded-lg p-3 hover:border-[#5a5a6e] transition-colors">
+      <div className="flex items-start justify-between">
+        <div className="flex-1">
+          <p className="text-[10px] uppercase tracking-wider text-[#8888a0]">{label}</p>
+          <p className="text-xl font-bold mt-0.5" style={{ color }}>{value}</p>
+          {sub && <p className="text-[10px] text-[#8888a0]">{sub}</p>}
+        </div>
+        <div className="flex flex-col items-end gap-1">
+          <Icon size={16} style={{ color }} />
+          {sparkData && sparkData.length > 1 && (
+            <SparklineChart data={sparkData} color={color} width={50} height={16} />
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
+// ── Main Component ───────────────────────────
 interface HomeDashboardProps {
   onNavigate: (view: string) => void;
   hasData: boolean;
@@ -147,30 +146,15 @@ interface HomeDashboardProps {
 }
 
 export default function HomeDashboard({
-  onNavigate,
-  hasData,
-  loading: initialLoading,
-  onSeedData,
-  seeding,
-  seedMessage,
+  onNavigate, hasData, loading: initialLoading, onSeedData, seeding, seedMessage,
 }: HomeDashboardProps) {
   const [dateRange, setDateRange] = useState<DateRange>(() => getDateRangePreset('last30days'));
   const [dashboardLoading, setDashboardLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [metrics, setMetrics] = useState({
-    totalEnergy: 0,
-    totalRevenue: 0,
-    totalSessions: 0,
-    activeStations: 0,
-  });
-  const [co2, setCo2] = useState({
-    totalCO2Reduction: 0,
-    treesEquivalent: 0,
-    kmDrivenEquivalent: 0,
-    energyUsed: 0,
-  });
+  const [metrics, setMetrics] = useState({ totalEnergy: 0, totalRevenue: 0, totalSessions: 0, activeStations: 0 });
+  const [envImpact, setEnvImpact] = useState<EnvironmentalImpact | null>(null);
   const [pendingBilling, setPendingBilling] = useState(0);
-  const [energyData, setEnergyData] = useState<{ date: string; energy: number; sessions: number }[]>([]);
+  const [energyData, setEnergyData] = useState<any[]>([]);
   const [energyGroupBy, setEnergyGroupBy] = useState<EnergyGroupBy>('month');
   const [revenueData, setRevenueData] = useState<any[]>([]);
   const [connectorData, setConnectorData] = useState<any[]>([]);
@@ -183,19 +167,25 @@ export default function HomeDashboard({
   const loadDashboard = useCallback(async () => {
     try {
       setDashboardLoading(true);
-      const [summary, co2Metrics, pending, energyTrend, revenue, connectors, hourly, daily, activity] = await Promise.all([
+      const [summary, pending, energyTrend, revenue, connectors, hourly, daily, activity] = await Promise.all([
         getSummaryMetrics(dateRange),
-        getCO2ImpactMetrics(dateRange),
-        countPendingSessions(),
+        countPendingSessions({
+          startDate: format(dateRange.startDate, 'yyyy-MM-dd'),
+          endDate: format(dateRange.endDate, 'yyyy-MM-dd'),
+          billingStatus: 'pending',
+          stationId: '',
+          searchTerm: '',
+          page: 1,
+          pageSize: 50,
+        }),
         getEnergyTrend(dateRange),
         getRevenueByStation(dateRange),
         getConnectorTypeComparison(dateRange),
         getBestTimeToCharge(dateRange),
         getDailyTransactionsByConnector(dateRange),
-        getRecentActivity(dateRange, 10),
+        getRecentActivity(dateRange, 8),
       ]);
       setMetrics(summary);
-      setCo2(co2Metrics);
       setPendingBilling(pending);
       setEnergyData(energyTrend.data);
       setEnergyGroupBy(energyTrend.groupBy);
@@ -204,318 +194,199 @@ export default function HomeDashboard({
       setHourlyData(hourly);
       setDailyTransactions(daily);
       setRecentActivity(activity);
+      setEnvImpact(calculateEnvironmentalImpact(summary.totalEnergy, summary.totalSessions));
       const heatmap = await fetchHeatmapData();
       setHeatmapData(heatmap);
-    } catch (err) {
-      console.error('Dashboard load error:', err);
-    } finally {
-      setDashboardLoading(false);
-      setRefreshing(false);
-    }
+    } catch (err) { console.error('Dashboard load error:', err); }
+    finally { setDashboardLoading(false); setRefreshing(false); }
   }, [dateRange]);
 
-  useEffect(() => {
-    loadDashboard();
-  }, [loadDashboard]);
+  useEffect(() => { loadDashboard(); }, [loadDashboard]);
 
-  const handleRefresh = () => {
-    setRefreshing(true);
-    loadDashboard();
-  };
-
+  const handleRefresh = () => { setRefreshing(true); loadDashboard(); };
   const handleExportPdf = async () => {
     setIsExportingPdf(true);
     try {
       const { exportToCSV } = await import('../lib/analyticsService');
-      const data = [
+      exportToCSV([
         { metric: 'Sessions', value: metrics.totalSessions },
         { metric: 'Energy (kWh)', value: metrics.totalEnergy.toFixed(2) },
         { metric: 'Revenue (JOD)', value: formatJOD(metrics.totalRevenue) },
-        { metric: 'Active Stations', value: metrics.activeStations },
-        { metric: 'CO2 Saved (kg)', value: co2.totalCO2Reduction.toFixed(1) },
-        { metric: 'Pending Billing', value: pendingBilling },
-      ];
-      exportToCSV(data, `dashboard-summary-${format(dateRange.startDate, 'yyyy-MM-dd')}-to-${format(dateRange.endDate, 'yyyy-MM-dd')}.csv`);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setIsExportingPdf(false);
-    }
+        { metric: 'Stations', value: metrics.activeStations },
+        { metric: 'CO₂ Avoided (kg)', value: envImpact?.co2Avoided.toFixed(1) ?? '0' },
+      ], `dashboard-${format(dateRange.startDate, 'yyyy-MM-dd')}.csv`);
+    } catch (e) { console.error(e); }
+    finally { setIsExportingPdf(false); }
   };
 
   const loading = initialLoading || dashboardLoading;
 
+  // Sparkline data from daily transactions
+  const dailySpark = dailyTransactions.map((d: any) => {
+    const vals = Object.values(d).filter(v => typeof v === 'number') as number[];
+    return vals.reduce((s, v) => s + v, 0);
+  });
+  const energySpark = energyData.map((d: any) => d.energy || 0);
+  const revenueSpark = revenueData.map((d: any) => d.revenue || 0);
+
   return (
-    <div className="space-y-6">
+    <div className="bg-[#1e1e2e] rounded-xl p-4 -mx-2 min-h-[calc(100vh-120px)]">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Dashboard</h2>
-          <p className="text-gray-600 mt-1">Overview of charging operations and performance</p>
+          <h2 className="text-xl font-bold text-[#e0e0e8]">⚡ EV Charging Dashboard</h2>
+          <p className="text-[11px] text-[#8888a0]">Real-time operations overview</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={handleRefresh}
-            disabled={refreshing || loading}
-            className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 text-sm font-medium text-gray-700"
-          >
-            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-            Refresh
+        <div className="flex items-center gap-2">
+          <button onClick={handleRefresh} disabled={refreshing || loading}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#2a2a3e] border border-[#3a3a4e] text-[#c0c0d0] rounded-lg text-xs hover:bg-[#3a3a4e] disabled:opacity-50">
+            <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} /> Refresh
           </button>
-          <button
-            onClick={handleExportPdf}
-            disabled={isExportingPdf || loading}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium"
-          >
-            {isExportingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-            Export summary
+          <button onClick={handleExportPdf} disabled={isExportingPdf || loading}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#4A90D9] text-white rounded-lg text-xs hover:bg-[#3A80C9] disabled:opacity-50">
+            {isExportingPdf ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />} Export
           </button>
         </div>
       </div>
 
-      {/* Date range */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+      {/* Slicer Bar */}
+      <div className="bg-[#2a2a3e] border border-[#3a3a4e] rounded-lg p-3 mb-4">
         <DateRangeSelector dateRange={dateRange} onChange={setDateRange} />
       </div>
 
-      {/* Empty state / Sample data (Phase 1) */}
+      {/* Empty state */}
       {!initialLoading && !hasData && (
-        <div className="p-6 bg-green-50 border-2 border-green-200 rounded-xl">
-          <h4 className="font-semibold text-green-900 mb-3 flex items-center gap-2">
-            <Database className="w-5 h-5" />
-            Sample Data Available
+        <div className="p-5 bg-[#1a3a1a] border border-[#2a5a2a] rounded-xl mb-4">
+          <h4 className="font-semibold text-[#4ADE80] mb-2 flex items-center gap-2">
+            <Database size={16} /> Sample Data Available
           </h4>
-          <p className="text-sm text-green-800 mb-4">
-            Load sample stations, Jordan TOU rates, and fixed charges to test the system
-          </p>
+          <p className="text-xs text-[#8888a0] mb-3">Load sample stations, rates, and charges to test the system</p>
           {seedMessage && (
-            <div className={`mb-4 p-3 rounded-lg flex items-start gap-2 ${seedMessage.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-              {seedMessage.type === 'success' ? <CheckCircle className="w-5 h-5 flex-shrink-0" /> : <AlertCircle className="w-5 h-5 flex-shrink-0" />}
-              <span className="text-sm">{seedMessage.text}</span>
+            <div className={`mb-3 p-2 rounded-lg flex items-center gap-2 text-xs ${seedMessage.type === 'success' ? 'bg-[#1a4a1a] text-[#4ADE80]' : 'bg-[#4a1a1a] text-[#F87171]'}`}>
+              {seedMessage.type === 'success' ? <CheckCircle size={14} /> : <AlertCircle size={14} />}
+              {seedMessage.text}
             </div>
           )}
-          <button
-            onClick={onSeedData}
-            disabled={seeding}
-            className="w-full sm:w-auto bg-green-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
-          >
-            {seeding ? <><Loader2 className="w-5 h-5 animate-spin" /> Loading Sample Data...</> : <><Database className="w-5 h-5" /> Load Sample Data</>}
+          <button onClick={onSeedData} disabled={seeding}
+            className="bg-[#2ECC71] text-[#1e1e2e] py-2 px-4 rounded-lg text-sm font-semibold hover:bg-[#27AE60] disabled:opacity-50 flex items-center gap-2">
+            {seeding ? <><Loader2 size={14} className="animate-spin" /> Loading...</> : <><Database size={14} /> Load Sample Data</>}
           </button>
-          <p className="text-xs text-green-700 mt-3">Creates: 3 stations, Jordan EDCO TOU rate structure, 2 fixed charges</p>
         </div>
       )}
 
       {loading ? (
-        <div className="flex justify-center py-16">
-          <Loader2 className="w-10 h-10 text-blue-600 animate-spin" />
+        <div className="flex justify-center py-20">
+          <Loader2 size={32} className="text-[#4A90D9] animate-spin" />
         </div>
       ) : (
         <>
-          {/* KPI strip (Phase 1) */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            <div className="bg-white rounded-xl shadow-md border border-gray-200 p-4 hover:shadow-lg transition-shadow">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Sessions</p>
-                  <p className="text-2xl font-bold text-gray-900 mt-0.5">{metrics.totalSessions}</p>
-                </div>
-                <div className="p-2.5 bg-blue-100 rounded-xl">
-                  <Activity className="w-6 h-6 text-blue-600" />
-                </div>
-              </div>
-            </div>
-            <div className="bg-white rounded-xl shadow-md border border-gray-200 p-4 hover:shadow-lg transition-shadow">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Energy</p>
-                  <p className="text-2xl font-bold text-gray-900 mt-0.5">{metrics.totalEnergy.toFixed(1)}</p>
-                  <p className="text-xs text-gray-500">kWh</p>
-                </div>
-                <div className="p-2.5 bg-cyan-100 rounded-xl">
-                  <Zap className="w-6 h-6 text-cyan-600" />
-                </div>
-              </div>
-            </div>
-            <div className="bg-white rounded-xl shadow-md border border-gray-200 p-4 hover:shadow-lg transition-shadow">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Revenue</p>
-                  <p className="text-2xl font-bold text-gray-900 mt-0.5">{formatJOD(metrics.totalRevenue)}</p>
-                </div>
-                <div className="p-2.5 bg-green-100 rounded-xl">
-                  <DollarSign className="w-6 h-6 text-green-600" />
-                </div>
-              </div>
-            </div>
-            <div className="bg-white rounded-xl shadow-md border border-gray-200 p-4 hover:shadow-lg transition-shadow">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Active stations</p>
-                  <p className="text-2xl font-bold text-gray-900 mt-0.5">{metrics.activeStations}</p>
-                </div>
-                <div className="p-2.5 bg-slate-100 rounded-xl">
-                  <MapPin className="w-6 h-6 text-slate-600" />
-                </div>
-              </div>
-            </div>
-            <div className="bg-white rounded-xl shadow-md border border-gray-200 p-4 hover:shadow-lg transition-shadow">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">CO₂ saved</p>
-                  <p className="text-2xl font-bold text-gray-900 mt-0.5">{co2.totalCO2Reduction.toFixed(1)}</p>
-                  <p className="text-xs text-gray-500">kg</p>
-                </div>
-                <div className="p-2.5 bg-teal-100 rounded-xl">
-                  <Leaf className="w-6 h-6 text-teal-600" />
-                </div>
-              </div>
-            </div>
-            <div className="bg-white rounded-xl shadow-md border border-gray-200 p-4 hover:shadow-lg transition-shadow">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Pending billing</p>
-                  <p className="text-2xl font-bold text-gray-900 mt-0.5">{pendingBilling}</p>
-                </div>
-                <div className="p-2.5 bg-amber-100 rounded-xl">
-                  <Calculator className="w-6 h-6 text-amber-600" />
-                </div>
-              </div>
-            </div>
+          {/* KPI Strip */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 mb-4">
+            <KPICard label="Sessions" value={metrics.totalSessions.toLocaleString()} icon={Activity} color="#4A90D9" sparkData={dailySpark} />
+            <KPICard label="Energy" value={metrics.totalEnergy >= 1000 ? `${(metrics.totalEnergy / 1000).toFixed(1)} MWh` : `${metrics.totalEnergy.toFixed(1)} kWh`} icon={Zap} color="#1ABC9C" sparkData={energySpark} />
+            <KPICard label="Revenue" value={formatJOD(metrics.totalRevenue)} icon={DollarSign} color="#2ECC71" sparkData={revenueSpark} />
+            <KPICard label="Stations" value={String(metrics.activeStations)} icon={MapPin} color="#9B59B6" />
+            <KPICard label="CO₂ Saved" value={envImpact ? (envImpact.co2Avoided >= 1000 ? `${(envImpact.co2Avoided / 1000).toFixed(1)} t` : `${envImpact.co2Avoided.toFixed(1)} kg`) : '0'} icon={Leaf} color="#2ECC71" />
+            <KPICard label="Pending" value={String(pendingBilling)} sub={pendingBilling > 0 ? 'Need billing' : 'All clear'} icon={Calculator} color={pendingBilling > 0 ? '#F1C40F' : '#8888a0'} />
           </div>
 
-          {/* Phase 2: World clock */}
-          <WorldClockDigital />
+          {/* World Clock */}
+          <div className="mb-4">
+            <PowerBITile title="World Time" icon={<Clock size={12} />} span={3}>
+              <WorldClock />
+            </PowerBITile>
+          </div>
 
-          {/* Phase 2: Income + Environment */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg p-6 text-white">
-              <div className="flex items-center gap-2 mb-4">
-                <DollarSign className="w-6 h-6" />
-                <h3 className="text-lg font-semibold">Revenue summary</h3>
-              </div>
-              <p className="text-blue-100 text-sm mb-4">Income for selected period</p>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="bg-white/10 rounded-lg p-4 backdrop-blur-sm">
-                  <p className="text-blue-100 text-xs font-medium mb-1">Total revenue</p>
-                  <p className="text-2xl font-bold">{formatJOD(metrics.totalRevenue)}</p>
+          {/* Row 1: Revenue Summary + Environmental Impact */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-3">
+            <PowerBITile title="Revenue Summary" icon={<DollarSign size={12} />}>
+              <div className="grid grid-cols-3 gap-2 mb-3">
+                <div className="bg-[#1a1a2e] rounded-lg p-3 text-center border border-[#3a3a4e]">
+                  <p className="text-[9px] text-[#8888a0] uppercase">Total</p>
+                  <p className="text-lg font-bold text-[#2ECC71]">{formatJOD(metrics.totalRevenue)}</p>
                 </div>
-                <div className="bg-white/10 rounded-lg p-4 backdrop-blur-sm">
-                  <p className="text-blue-100 text-xs font-medium mb-1">Sessions</p>
-                  <p className="text-2xl font-bold">{metrics.totalSessions}</p>
+                <div className="bg-[#1a1a2e] rounded-lg p-3 text-center border border-[#3a3a4e]">
+                  <p className="text-[9px] text-[#8888a0] uppercase">Sessions</p>
+                  <p className="text-lg font-bold text-[#4A90D9]">{metrics.totalSessions}</p>
                 </div>
-                <div className="bg-white/10 rounded-lg p-4 backdrop-blur-sm">
-                  <p className="text-blue-100 text-xs font-medium mb-1">Avg per session</p>
-                  <p className="text-2xl font-bold">
+                <div className="bg-[#1a1a2e] rounded-lg p-3 text-center border border-[#3a3a4e]">
+                  <p className="text-[9px] text-[#8888a0] uppercase">Avg/Session</p>
+                  <p className="text-lg font-bold text-[#F1C40F]">
                     {metrics.totalSessions > 0 ? formatJOD(metrics.totalRevenue / metrics.totalSessions) : '—'}
                   </p>
                 </div>
               </div>
-            </div>
-            <div>
-              <CO2ImpactCard
-                totalCO2Reduction={co2.totalCO2Reduction}
-                treesEquivalent={co2.treesEquivalent}
-                kmDrivenEquivalent={co2.kmDrivenEquivalent}
-                energyUsed={co2.energyUsed}
-              />
-            </div>
-          </div>
-
-          {/* Phase 3: Hero chart */}
-          <div className="bg-white rounded-xl shadow-md border border-gray-200 p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Energy trend</h3>
-            <p className="text-sm text-gray-500 mb-4">Energy consumption over selected period</p>
-            <EnergyTrendChart data={energyData} groupBy={energyGroupBy} />
-          </div>
-
-          {/* Phase 3: Revenue by station + Connector mix */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-white rounded-xl shadow-md border border-gray-200 p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">Revenue by station</h3>
-              <p className="text-sm text-gray-500 mb-4">Top stations by revenue</p>
               <RevenueChart data={revenueData} />
-            </div>
-            <div>
+            </PowerBITile>
+            <PowerBITile title="Environmental Impact" icon={<Leaf size={12} />}>
+              {envImpact && <EnvironmentalImpactPanel impact={envImpact} />}
+            </PowerBITile>
+          </div>
+
+          {/* Row 2: Energy Trend (full width) */}
+          <div className="mb-3">
+            <PowerBITile title="Energy Trend" icon={<Zap size={12} />} span={3}>
+              <EnergyTrendChart data={energyData} groupBy={energyGroupBy} />
+            </PowerBITile>
+          </div>
+
+          {/* Row 3: Connector Donut + Best Time */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-3">
+            <PowerBITile title="Connector Types" icon={<Activity size={12} />}>
               <ConnectorTypeChart data={connectorData} />
-            </div>
-          </div>
-
-          {/* Phase 3: Best time to charge + Daily transactions */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div>
+            </PowerBITile>
+            <PowerBITile title="Best Time to Charge" icon={<Clock size={12} />}>
               <BestTimeToChargeChart data={hourlyData} />
-            </div>
-            <div>
+            </PowerBITile>
+          </div>
+
+          {/* Row 4: Daily Transactions + Heatmap */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-3">
+            <PowerBITile title="Daily Transactions" icon={<Activity size={12} />}>
               <DailyTransactionsChart data={dailyTransactions} />
-            </div>
+            </PowerBITile>
+            <PowerBITile title="Activity Heatmap" icon={<MapPin size={12} />}>
+              <HeatmapGrid data={heatmapData} />
+            </PowerBITile>
           </div>
 
-          {/* Phase 4: Activity heatmap */}
-          <div className="bg-white rounded-xl shadow-md border border-gray-200 p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Activity heatmap</h3>
-            <p className="text-sm text-gray-500 mb-4">Sessions by day of week and hour (last 30 days)</p>
-            <HeatmapGrid data={heatmapData} />
-          </div>
-
-          {/* Phase 4: Alerts / Quick actions */}
-          <div className="bg-white rounded-xl shadow-md border border-gray-200 p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Quick actions</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {pendingBilling > 0 && (
-                <div className="flex items-center gap-3 p-4 rounded-lg border border-amber-200 bg-amber-50">
-                  <Calculator className="w-8 h-8 text-amber-600" />
-                  <div className="flex-1">
-                    <p className="font-medium text-gray-900">{pendingBilling} session(s) pending billing</p>
-                    <p className="text-sm text-gray-500">Go to Billing to calculate</p>
-                  </div>
-                  <button onClick={() => onNavigate('billing')} className="px-3 py-1.5 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700">
-                    Open Billing
-                  </button>
+          {/* Row 5: Quick Actions */}
+          {pendingBilling > 0 && (
+            <div className="bg-[#2a2a3e] border border-[#F1C40F]/30 rounded-lg p-3 mb-3">
+              <div className="flex items-center gap-3">
+                <AlertTriangle size={18} className="text-[#F1C40F]" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-[#e0e0e8]">{pendingBilling} session(s) pending billing</p>
+                  <p className="text-[10px] text-[#8888a0]">Click to process</p>
                 </div>
-              )}
-              {metrics.totalSessions === 0 && !loading && (
-                <div className="flex items-center gap-3 p-4 rounded-lg border border-gray-200 bg-gray-50">
-                  <AlertTriangle className="w-8 h-8 text-gray-500" />
-                  <div>
-                    <p className="font-medium text-gray-900">No data in selected period</p>
-                    <p className="text-sm text-gray-500">Change date range or load sample data</p>
-                  </div>
-                </div>
-              )}
-              {pendingBilling === 0 && metrics.totalSessions > 0 && (
-                <p className="text-gray-500 col-span-full sm:col-span-3">No pending actions. All clear.</p>
-              )}
+                <button onClick={() => onNavigate('billing')} className="px-3 py-1.5 bg-[#F1C40F] text-[#1e1e2e] rounded-lg text-xs font-semibold hover:bg-[#F39C12]">
+                  Open Billing
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* Phase 4: Recent activity table */}
-          <div className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
-            <div className="p-6 border-b border-gray-200 flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-gray-900">Recent activity</h3>
-              <button onClick={() => onNavigate('billing')} className="text-sm font-medium text-blue-600 hover:text-blue-700">View all →</button>
-            </div>
+          {/* Row 6: Recent Activity */}
+          <PowerBITile title="Recent Activity" icon={<Activity size={12} />} span={3}>
             <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Transaction</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Station</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Energy</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cost</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Billing</th>
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-[#3a3a4e]">
+                    {['Transaction', 'Station', 'Energy', 'Cost', 'Time', 'Status'].map(h => (
+                      <th key={h} className="px-3 py-2 text-left text-[9px] font-medium text-[#8888a0] uppercase tracking-wider">{h}</th>
+                    ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200">
+                <tbody>
                   {recentActivity.map((row: any) => (
-                    <tr key={row.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{row.transactionId || '—'}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{row.station || '—'}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{row.energy != null ? `${Number(row.energy).toFixed(2)} kWh` : '—'}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{row.cost != null ? formatJOD(row.cost) : '—'}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{row.startTime ? new Date(row.startTime).toLocaleString() : '—'}</td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${row.hasBilling ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}`}>
+                    <tr key={row.id} className="border-b border-[#3a3a4e]/50 hover:bg-[#3a3a4e]/30">
+                      <td className="px-3 py-2 text-[#e0e0e8] font-medium">{row.transactionId || '—'}</td>
+                      <td className="px-3 py-2 text-[#c0c0d0]">{row.station || '—'}</td>
+                      <td className="px-3 py-2 text-[#1ABC9C] font-medium">{row.energy != null ? `${Number(row.energy).toFixed(2)} kWh` : '—'}</td>
+                      <td className="px-3 py-2 text-[#2ECC71] font-medium">{row.cost != null ? formatJOD(row.cost) : '—'}</td>
+                      <td className="px-3 py-2 text-[#8888a0] whitespace-nowrap">{row.startTime ? new Date(row.startTime).toLocaleString() : '—'}</td>
+                      <td className="px-3 py-2">
+                        <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded ${row.hasBilling ? 'bg-[#2ECC71]/20 text-[#2ECC71]' : 'bg-[#F1C40F]/20 text-[#F1C40F]'}`}>
                           {row.hasBilling ? 'Calculated' : 'Pending'}
                         </span>
                       </td>
@@ -524,10 +395,10 @@ export default function HomeDashboard({
                 </tbody>
               </table>
               {recentActivity.length === 0 && (
-                <div className="text-center py-12 text-gray-500 text-sm">No recent activity in selected period</div>
+                <div className="text-center py-8 text-[#8888a0] text-xs">No recent activity</div>
               )}
             </div>
-          </div>
+          </PowerBITile>
         </>
       )}
     </div>

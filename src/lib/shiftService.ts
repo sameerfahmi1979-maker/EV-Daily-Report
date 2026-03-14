@@ -275,3 +275,54 @@ export async function getShiftSummary(stationId?: string, dateFrom?: string, dat
     pendingHandovers: shifts.filter(s => s.handover_status === 'pending').length,
   };
 }
+
+/**
+ * Recalculate totals for a single shift from linked sessions & billing data.
+ */
+export async function recalculateShiftTotals(shiftId: string): Promise<{
+  session_count: number;
+  total_kwh: number;
+  total_amount_jod: number;
+}> {
+  const { data, error } = await (supabase.rpc as any)('recalculate_shift_totals', {
+    p_shift_id: shiftId,
+  });
+
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Recalculate totals for ALL shifts at once.
+ */
+export async function recalculateAllShiftTotals(): Promise<{
+  shifts_updated: number;
+  total_kwh: number;
+  total_amount_jod: number;
+}> {
+  const { data, error } = await (supabase.rpc as any)('recalculate_all_shift_totals');
+
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Get sessions for a specific shift with billing data.
+ */
+export async function getShiftSessionsWithBilling(shiftId: string): Promise<any[]> {
+  const { data, error } = await supabase
+    .from('charging_sessions')
+    .select(`
+      id, transaction_id, card_number, start_ts, end_ts,
+      energy_consumed_kwh, charge_id,
+      billing_calculations (
+        id, total_amount, subtotal, fees
+      )
+    `)
+    .eq('shift_id', shiftId)
+    .order('start_ts', { ascending: true });
+
+  if (error) throw error;
+  return data || [];
+}
+
