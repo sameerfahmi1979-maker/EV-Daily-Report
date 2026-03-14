@@ -51,6 +51,7 @@ export default function DateRangeSelector({ dateRange, onChange }: DateRangeSele
       // Don't fire onChange — keep current range until user picks dates
     } else {
       setShowCustom(false);
+      setHasUnapplied(false);
       const range = getDateRangePreset(value);
       onChange(range);
     }

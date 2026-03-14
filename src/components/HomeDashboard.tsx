@@ -138,6 +138,7 @@ function KPICard({ label, value, sub, icon: Icon, color, sparkData }: {
 // ── Main Component ───────────────────────────
 interface HomeDashboardProps {
   onNavigate: (view: string) => void;
+  onNavigateToPendingBilling: () => void;
   hasData: boolean;
   loading: boolean;
   onSeedData: () => Promise<void>;

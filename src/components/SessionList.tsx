@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calculator, Eye, RefreshCw, AlertCircle, CheckCircle, Loader2, Filter, FileText, CheckSquare, Square, Edit, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Calculator, Eye, RefreshCw, AlertCircle, CheckCircle, Loader2, Filter, FileText, CheckSquare, Square, CreditCard as Edit, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import {
   getSessionsWithBillingFiltered,
   calculateAndSaveSessionBilling,
@@ -53,7 +53,11 @@ interface Session {
   }>;
 }
 
-export default function SessionList() {
+interface SessionListProps {
+  initialBillingStatus?: 'all' | 'calculated' | 'pending';
+}
+
+export default function SessionList({ initialBillingStatus }: SessionListProps = {}) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
   const [calculating, setCalculating] = useState<string | null>(null);
@@ -140,11 +144,22 @@ export default function SessionList() {
   }
 
   function handleFilterChange(key: keyof SessionFilters, value: any) {
-    setFilters(prev => ({
-      ...prev,
-      [key]: value,
-      page: key === 'page' ? value : 1
-    }));
+    setFilters(prev => {
+      const updated = {
+        ...prev,
+        [key]: value,
+        page: key === 'page' ? value : 1
+      };
+      if (key === 'billingStatus' && value === 'pending') {
+        updated.startDate = '';
+        updated.endDate = '';
+      }
+      if (key === 'billingStatus' && value === 'all') {
+        updated.startDate = formatDate(startOfMonth(new Date()), 'yyyy-MM-dd');
+        updated.endDate = formatDate(endOfDay(new Date()), 'yyyy-MM-dd');
+      }
+      return updated;
+    });
   }
 
   function handlePageChange(newPage: number) {
