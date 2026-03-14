@@ -16,6 +16,8 @@ export interface ShiftSelection {
   shiftDate: string;
   shiftDuration: '8h' | '12h';
   shiftType: string;
+  startTime: string;  // HH:mm format — user can override
+  endTime: string;    // HH:mm format — user can override
 }
 
 interface ShiftSelectorProps {
@@ -30,8 +32,10 @@ export default function ShiftSelector({ value, onChange, disabled = false }: Shi
   const [selectedStation, setSelectedStation] = useState(value?.stationId || '');
   const [selectedOperator, setSelectedOperator] = useState(value?.operatorId || '');
   const [shiftDate, setShiftDate] = useState(value?.shiftDate || new Date().toISOString().split('T')[0]);
-  const [shiftDuration, setShiftDuration] = useState<'8h' | '12h'>(value?.shiftDuration || '12h');
+  const [shiftDuration, setShiftDuration] = useState<'8h' | '12h'>(value?.shiftDuration || '8h');
   const [shiftType, setShiftType] = useState(value?.shiftType || '');
+  const [startTime, setStartTime] = useState(value?.startTime || '');
+  const [endTime, setEndTime] = useState(value?.endTime || '');
 
   useEffect(() => {
     loadStations();
@@ -51,9 +55,18 @@ export default function ShiftSelector({ value, onChange, disabled = false }: Shi
     }
   }, [shiftDuration]);
 
+  // When shift type changes, pre-fill start/end times with defaults
+  useEffect(() => {
+    const def = SHIFT_TYPES[shiftType];
+    if (def) {
+      setStartTime(def.defaultStart);
+      setEndTime(def.defaultEnd);
+    }
+  }, [shiftType]);
+
   // Propagate changes
   useEffect(() => {
-    if (selectedStation && selectedOperator && shiftDate && shiftType) {
+    if (selectedStation && selectedOperator && shiftDate && shiftType && startTime && endTime) {
       const station = stations.find(s => s.id === selectedStation);
       const operator = operators.find(o => o.id === selectedOperator);
       onChange({
@@ -64,11 +77,13 @@ export default function ShiftSelector({ value, onChange, disabled = false }: Shi
         shiftDate,
         shiftDuration,
         shiftType,
+        startTime,
+        endTime,
       });
     } else {
       onChange(null);
     }
-  }, [selectedStation, selectedOperator, shiftDate, shiftDuration, shiftType]);
+  }, [selectedStation, selectedOperator, shiftDate, shiftDuration, shiftType, startTime, endTime]);
 
   async function loadStations() {
     try {
@@ -194,7 +209,7 @@ export default function ShiftSelector({ value, onChange, disabled = false }: Shi
                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-300'
               } disabled:opacity-50`}
             >
-              12 Hours
+              Extended Shift
             </button>
           </div>
         </div>
@@ -222,12 +237,60 @@ export default function ShiftSelector({ value, onChange, disabled = false }: Shi
             ))}
           </div>
         </div>
+
+        {/* Actual Start & End Time — only editable for Extended Shift */}
+        <div>
+          <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 mb-1.5">
+            <Clock size={14} />
+            Actual Start Time <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="time"
+            value={startTime}
+            onChange={(e) => setStartTime(e.target.value)}
+            disabled={disabled || shiftDuration === '8h'}
+            className={`w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 text-sm ${
+              shiftDuration === '8h' ? 'bg-gray-100 cursor-not-allowed' : 'bg-gray-50'
+            }`}
+          />
+          {shiftDuration === '8h' && (
+            <p className="text-xs text-gray-400 mt-1">Fixed for 8-hour shifts</p>
+          )}
+          {shiftDuration === '12h' && selectedShiftDef && startTime !== selectedShiftDef.defaultStart && (
+            <p className="text-xs text-amber-600 mt-1">
+              Default: {selectedShiftDef.defaultStart} — adjusted by operator
+            </p>
+          )}
+        </div>
+        <div>
+          <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700 mb-1.5">
+            <Clock size={14} />
+            Actual End Time <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="time"
+            value={endTime}
+            onChange={(e) => setEndTime(e.target.value)}
+            disabled={disabled || shiftDuration === '8h'}
+            className={`w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 text-sm ${
+              shiftDuration === '8h' ? 'bg-gray-100 cursor-not-allowed' : 'bg-gray-50'
+            }`}
+          />
+          {shiftDuration === '8h' && (
+            <p className="text-xs text-gray-400 mt-1">Fixed for 8-hour shifts</p>
+          )}
+          {shiftDuration === '12h' && selectedShiftDef && endTime !== selectedShiftDef.defaultEnd && (
+            <p className="text-xs text-amber-600 mt-1">
+              Default: {selectedShiftDef.defaultEnd} — adjusted by operator
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Preview */}
       {selectedShiftDef && selectedStation && selectedOperator && (
         <div className="mt-5 p-4 bg-blue-50 rounded-lg border border-blue-200">
-          <div className="flex items-center gap-6 text-sm">
+          <div className="flex items-center gap-6 text-sm flex-wrap">
             <div>
               <span className="text-blue-600 font-medium">Station:</span>{' '}
               <span className="text-blue-900">{stations.find(s => s.id === selectedStation)?.name}</span>
@@ -239,6 +302,10 @@ export default function ShiftSelector({ value, onChange, disabled = false }: Shi
             <div>
               <span className="text-blue-600 font-medium">Shift:</span>{' '}
               <span className="text-blue-900">{selectedShiftDef.label}</span>
+            </div>
+            <div>
+              <span className="text-blue-600 font-medium">Time:</span>{' '}
+              <span className="text-blue-900 font-semibold">{startTime} — {endTime}</span>
             </div>
             <div>
               <span className="text-blue-600 font-medium">Date:</span>{' '}

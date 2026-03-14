@@ -839,8 +839,9 @@ export function downloadSampleTemplate() {
 }
 
 /**
- * Cascade-delete an import batch and ALL related records:
- * billing_calculations → charging_sessions → shifts → import_batch
+ * Cascade-delete an import batch and ALL related records.
+ * Deletes in dependency order:
+ *   billing_breakdown_items → billing_calculations → charging_sessions → shifts → import_batch
  */
 export async function deleteImportBatchCascade(batchId: string): Promise<{
   success: boolean;
@@ -849,11 +850,92 @@ export async function deleteImportBatchCascade(batchId: string): Promise<{
   sessions_deleted: number;
   shifts_deleted: number;
 }> {
-  const { data, error } = await (supabase.rpc as any)('delete_import_batch_cascade', {
-    p_batch_id: batchId,
-  });
+  // 1. Get batch info (for filename)
+  const { data: batch, error: batchError } = await supabase
+    .from('import_batches')
+    .select('filename')
+    .eq('id', batchId)
+    .single();
 
-  if (error) throw error;
-  if (!data?.success) throw new Error(data?.error || 'Failed to delete batch');
-  return data;
+  if (batchError) throw batchError;
+  const filename = batch?.filename || 'unknown';
+
+  // 2. Get all session IDs for this batch
+  const { data: sessions, error: sessError } = await supabase
+    .from('charging_sessions')
+    .select('id')
+    .eq('import_batch_id', batchId);
+
+  if (sessError) throw sessError;
+  const sessionIds = (sessions || []).map(s => s.id);
+
+  let billingDeleted = 0;
+
+  if (sessionIds.length > 0) {
+    // 3. Get all billing calculation IDs for these sessions
+    const { data: billingCalcs, error: bcError } = await supabase
+      .from('billing_calculations')
+      .select('id')
+      .in('session_id', sessionIds);
+
+    if (bcError) throw bcError;
+    const billingIds = (billingCalcs || []).map(b => b.id);
+
+    if (billingIds.length > 0) {
+      // 4. Delete billing_breakdown_items first (FK to billing_calculations)
+      const { error: bbiError } = await supabase
+        .from('billing_breakdown_items')
+        .delete()
+        .in('billing_calculation_id', billingIds);
+
+      if (bbiError) {
+        console.warn('billing_breakdown_items delete warning:', bbiError.message);
+        // Continue — table may not exist or may have no matching rows
+      }
+
+      // 5. Delete billing_calculations
+      const { error: bcDelError } = await supabase
+        .from('billing_calculations')
+        .delete()
+        .in('session_id', sessionIds);
+
+      if (bcDelError) throw bcDelError;
+      billingDeleted = billingIds.length;
+    }
+
+    // 6. Delete charging_sessions
+    const { error: sessDelError } = await supabase
+      .from('charging_sessions')
+      .delete()
+      .eq('import_batch_id', batchId);
+
+    if (sessDelError) throw sessDelError;
+  }
+
+  // 7. Delete shifts linked to this batch
+  const { data: deletedShifts, error: shiftError } = await supabase
+    .from('shifts')
+    .delete()
+    .eq('import_batch_id', batchId)
+    .select('id');
+
+  if (shiftError) throw shiftError;
+
+  // 8. Delete the import batch itself
+  const { error: batchDelError } = await supabase
+    .from('import_batches')
+    .delete()
+    .eq('id', batchId);
+
+  if (batchDelError) throw batchDelError;
+
+  console.log(`[Cascade Delete] Batch "${filename}": ${billingDeleted} billing, ${sessionIds.length} sessions, ${deletedShifts?.length || 0} shifts deleted`);
+
+  return {
+    success: true,
+    filename,
+    billing_deleted: billingDeleted,
+    sessions_deleted: sessionIds.length,
+    shifts_deleted: deletedShifts?.length || 0,
+  };
 }

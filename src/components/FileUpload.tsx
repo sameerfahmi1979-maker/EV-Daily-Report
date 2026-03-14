@@ -2,7 +2,7 @@ import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react'
 import { Upload, FileSpreadsheet, Download, AlertCircle, CheckCircle, Loader2, XCircle, ArrowRight, ArrowLeft, Clock, Table2, Rocket, Trash2, History } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { parseExcelFile, processBatch, createImportBatch, downloadSampleTemplate, CancelToken, validateSession, getImportBatches, deleteImportBatchCascade } from '../lib/importService';
-import { createShift, linkSessionsToShift, SHIFT_TYPES } from '../lib/shiftService';
+import { createShift, linkSessionsToShift } from '../lib/shiftService';
 import SpreadsheetPreview from './SpreadsheetPreview';
 import ShiftSelector, { ShiftSelection } from './ShiftSelector';
 import type { ParsedSession } from '../lib/importService';
@@ -146,16 +146,22 @@ export default function FileUpload({ onImportComplete, onNavigateToBilling }: Fi
       // 1. Create import batch
       const batchId = await createImportBatch(file!.name, parsedSessions.length, user.id);
 
-      // 2. Create shift record
-      const shiftDef = SHIFT_TYPES[shiftSelection.shiftType];
-      const shiftStartStr = `${shiftSelection.shiftDate}T${shiftDef.defaultStart}:00`;
-      const shiftEndStr = shiftSelection.shiftType === 'night' || shiftSelection.shiftType === 'extended_night'
+      // 2. Create shift record using the actual times the operator entered
+      const shiftStartStr = `${shiftSelection.shiftDate}T${shiftSelection.startTime}:00`;
+
+      // Determine if end time is on the next day
+      // If end time <= start time (e.g., start 16:00, end 00:00 or start 20:00, end 08:00), it crosses midnight
+      const startMinutes = parseInt(shiftSelection.startTime.split(':')[0]) * 60 + parseInt(shiftSelection.startTime.split(':')[1]);
+      const endMinutes = parseInt(shiftSelection.endTime.split(':')[0]) * 60 + parseInt(shiftSelection.endTime.split(':')[1]);
+      const crossesMidnight = endMinutes <= startMinutes;
+
+      const shiftEndStr = crossesMidnight
         ? (() => {
             const nextDay = new Date(shiftSelection.shiftDate);
             nextDay.setDate(nextDay.getDate() + 1);
-            return `${nextDay.toISOString().split('T')[0]}T${shiftDef.defaultEnd}:00`;
+            return `${nextDay.toISOString().split('T')[0]}T${shiftSelection.endTime}:00`;
           })()
-        : `${shiftSelection.shiftDate}T${shiftDef.defaultEnd}:00`;
+        : `${shiftSelection.shiftDate}T${shiftSelection.endTime}:00`;
 
       const shift = await createShift({
         station_id: shiftSelection.stationId,
@@ -411,7 +417,7 @@ export default function FileUpload({ onImportComplete, onNavigateToBilling }: Fi
               <Clock size={18} className="text-blue-600 flex-shrink-0" />
               <span>
                 <strong>{shiftSelection.stationName}</strong> → <strong>{shiftSelection.operatorName}</strong> → {' '}
-                <strong>{SHIFT_TYPES[shiftSelection.shiftType]?.label}</strong> on <strong>{shiftSelection.shiftDate}</strong>
+                <strong>{shiftSelection.startTime} — {shiftSelection.endTime}</strong> on <strong>{shiftSelection.shiftDate}</strong>
               </span>
             </div>
           )}

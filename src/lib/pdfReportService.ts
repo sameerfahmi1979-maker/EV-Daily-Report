@@ -9,8 +9,20 @@ import { format } from 'date-fns';
 import { supabase } from './supabase';
 import { getAllSettings, SettingsMap } from './settingsService';
 import { formatJOD } from './billingService';
+import { amiriRegularBase64 } from '../fonts/amiri-regular';
 
 // ---- Shared branded header ----
+
+/** Check if text contains Arabic characters */
+function containsArabic(text: string): boolean {
+  return /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(text);
+}
+
+/** Register the Amiri Arabic font in a jsPDF instance */
+function registerAmiriFont(doc: jsPDF) {
+  doc.addFileToVFS('Amiri-Regular.ttf', amiriRegularBase64);
+  doc.addFont('Amiri-Regular.ttf', 'Amiri', 'normal');
+}
 
 async function getSettings(): Promise<SettingsMap> {
   // Always fetch fresh settings to get latest branding
@@ -42,6 +54,9 @@ async function addBrandedHeader(doc: jsPDF, title: string, subtitle?: string): P
   let y = 15;
   let logoWidth = 0;
 
+  // Register Arabic font
+  registerAmiriFont(doc);
+
   // Logo — fetch and embed
   const logoUrl = s.company_logo_url;
   if (logoUrl) {
@@ -64,9 +79,18 @@ async function addBrandedHeader(doc: jsPDF, title: string, subtitle?: string): P
 
   // Company Name (offset by logo width)
   const textX = logoWidth > 0 ? 14 + logoWidth + 4 : 14;
-  doc.setFontSize(16);
-  doc.setFont('helvetica', 'bold');
-  doc.text(s.company_name || 'EV Charging Station', textX, y);
+  const companyName = s.company_name || 'EV Charging Station';
+
+  // Use Amiri font for Arabic text, Helvetica for Latin text
+  if (containsArabic(companyName)) {
+    doc.setFontSize(16);
+    doc.setFont('Amiri', 'normal');
+    doc.text(companyName, textX, y);
+  } else {
+    doc.setFontSize(16);
+    doc.setFont('helvetica', 'bold');
+    doc.text(companyName, textX, y);
+  }
   y += 6;
 
   if (s.company_address && s.show_company_address !== 'false') {
