@@ -14,7 +14,7 @@ import FixedChargesForm from './FixedChargesForm';
 import ImportPage from './ImportPage';
 import SessionList from './SessionList';
 import AnalyticsDashboard from './AnalyticsDashboard';
-import ExportPage from './ExportPage';
+import ReportsPage from './reports/ReportsPage';
 import HomeDashboard from './HomeDashboard';
 import ShiftManagement from './ShiftManagement';
 import SystemSettings from './SystemSettings';
@@ -270,7 +270,7 @@ export function Dashboard() {
 
         {currentView === 'analytics' && <AnalyticsDashboard />}
 
-        {currentView === 'reports' && <ExportPage />}
+        {currentView === 'reports' && <ReportsPage />}
 
         {currentView === 'shifts' && <ShiftManagement />}
 
