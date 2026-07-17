@@ -65,13 +65,7 @@ wss.on('connection', (ws, req) => {
   ws.on('close', (code, reason) => {
     console.log(`[${chargePointId}] Disconnected (code=${code}, reason=${reason.toString() || 'none'})`);
     chargerConnections.delete(chargePointId);
-
-    // Mark charger offline in DB (fire and forget)
-    supabase
-      .from('ocpp_chargers')
-      .update({ connection_status: 'Offline', updated_at: new Date().toISOString() })
-      .eq('charge_point_id', chargePointId)
-      .then(() => {});
+    markChargerOffline(chargePointId);
   });
 
   ws.on('error', (err) => {
@@ -79,14 +73,58 @@ wss.on('connection', (ws, req) => {
   });
 });
 
+// Marks a charger and all its connectors offline — called on WS close and heartbeat timeout
+async function markChargerOffline(chargePointId: string) {
+  const { data: charger } = await supabase
+    .from('ocpp_chargers')
+    .update({ connection_status: 'Offline', updated_at: new Date().toISOString() })
+    .eq('charge_point_id', chargePointId)
+    .select('id')
+    .single();
+
+  if (charger) {
+    // Reset all connectors to Unavailable and clear live power reading
+    await supabase
+      .from('ocpp_connectors')
+      .update({
+        status: 'Unavailable',
+        power_kw: 0,
+        last_status_update: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('charger_id', charger.id);
+  }
+}
+
 // Periodic heartbeat monitor — mark chargers Offline if no heartbeat for 3 minutes
 setInterval(async () => {
   const threshold = new Date(Date.now() - 3 * 60 * 1000).toISOString();
-  await supabase
+
+  const { data: staleChargers } = await supabase
     .from('ocpp_chargers')
-    .update({ connection_status: 'Offline' })
+    .select('charge_point_id, id')
     .eq('connection_status', 'Online')
     .lt('last_heartbeat_at', threshold);
+
+  if (!staleChargers || staleChargers.length === 0) return;
+
+  for (const charger of staleChargers) {
+    console.log(`[${charger.charge_point_id}] Heartbeat timeout — marking Offline`);
+    await supabase
+      .from('ocpp_chargers')
+      .update({ connection_status: 'Offline', updated_at: new Date().toISOString() })
+      .eq('id', charger.id);
+
+    await supabase
+      .from('ocpp_connectors')
+      .update({
+        status: 'Unavailable',
+        power_kw: 0,
+        last_status_update: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('charger_id', charger.id);
+  }
 }, 60000);
 
 httpServer.listen(PORT, () => {
