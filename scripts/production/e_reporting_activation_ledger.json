@@ -1,0 +1,239 @@
+{
+  "project": "qflxupfeyktdrpilctyo",
+  "createdAt": "2026-07-17T10:30:57.723Z",
+  "recon": {
+    "revenueTotal": {
+      "rpcTotal": 154012.183,
+      "sqlTotal": 154012.181,
+      "diff": 0.002,
+      "pass": false,
+      "rpcCount": 52686,
+      "sqlCount": 52686,
+      "countMatch": true
+    },
+    "paymentMethodSummary": {
+      "rpc": {
+        "cash": 9.979,
+        "card": 3.426,
+        "cliq": 2.825,
+        "unassigned": 153995.951,
+        "billing": 154012.181
+      },
+      "sql": {
+        "billing": "154012.181",
+        "card": "3.426",
+        "cash": "9.979",
+        "cliq": "2.825",
+        "unassigned": "153995.951"
+      },
+      "pass": true
+    },
+    "importReconciliation": {
+      "rpcRows": 629,
+      "sqlRows": 629,
+      "pass": true
+    },
+    "billingReconciliationSample": {
+      "rows": 14,
+      "unexpectedExceptions": []
+    }
+  },
+  "updatedAt": "2026-07-17T10:38:54.029Z",
+  "overnight": {
+    "overnightTxn900170717001": {
+      "billingTotal": 1.93,
+      "foundUnderStartDate": "2026-07-16",
+      "exceptionStatus": "legacy_engine",
+      "notLostOrDuplicated": true
+    },
+    "boundaryTxn900170717002": "NOT FOUND",
+    "totalRowsForDate2026_07_16": 1
+  },
+  "exportParity": {
+    "revenueRowCount": 229,
+    "revenueTotalFromRows": 154012.183,
+    "paymentSummaryBillingTotal": 154012.181,
+    "matchesPaymentSummary": false,
+    "reconciliationRowCount": 229,
+    "exportFunctionTakesRowsAsIs": true,
+    "note": "exportFinancialReconciliationExcel(scope, data) writes data.revenue/data.paymentReconciliation/etc. directly to worksheets with formatOnly (no re-aggregation) — verified by code inspection of src/lib/reportingV2ExportService.ts"
+  },
+  "locked": {
+    "lockedSnapshot": {
+      "handoverId": "65585eef-dbae-470e-b212-0882e7075b8c",
+      "isLocked": true,
+      "liveDiffersFromSnapshot": false,
+      "warning": null,
+      "snapshot": {
+        "status": "locked",
+        "version": 1,
+        "locked_at": "2026-07-17T11:19:14.310996+03:00",
+        "locked_by": "fec4d69a-e773-4e9b-a449-29fad0bdb4bc",
+        "card_total": 0,
+        "cash_total": 2.013,
+        "cliq_total": 0,
+        "billing_total": 2.013,
+        "expected_cash": 2.763,
+        "surplus_amount": 0,
+        "handover_number": "HO-20260717-90219d8c",
+        "net_adjustments": 0.75,
+        "shortage_amount": 0,
+        "discrepancy_reason": null,
+        "actual_cash_received": 2.763
+      }
+    },
+    "shortageReport": {
+      "shortage": 0.732,
+      "surplus": 0,
+      "discrepancyReason": "UAT shortage: cash drawer short by 1.000 JOD, verified by officer",
+      "expectedCash": 0.732,
+      "cardExcluded": true
+    },
+    "surplusReport": {
+      "shortage": 0,
+      "surplus": 2,
+      "discrepancyReason": "UAT surplus: extra 2.000 JOD found in drawer, verified by officer"
+    },
+    "adjustmentsInDetail": [
+      {
+        "status": "approved",
+        "amount": 1.5,
+        "direction": "increase"
+      },
+      {
+        "status": "approved",
+        "amount": 0.75,
+        "direction": "decrease"
+      },
+      {
+        "status": "rejected",
+        "amount": 5,
+        "direction": "increase"
+      }
+    ]
+  },
+  "roleMatrix": {
+    "officer_with_station": "ALLOWED (229 rows)",
+    "officer_without_station": "DENIED: EV-E denied: station is required for this role",
+    "accountant_with_station": "ALLOWED (229 rows)",
+    "opsmgr_without_station_global": "ALLOWED (229 rows)",
+    "viewer_with_station_readonly": "ALLOWED (229 rows)",
+    "pending_denied": "DENIED: EV-E denied: user not approved",
+    "disabled_denied": "DENIED: EV-E denied: user not approved",
+    "rejected_denied": "DENIED: EV-E denied: user not approved",
+    "anon_denied": "DENIED: permission denied for function report_revenue_summary"
+  },
+  "crossStation": {
+    "stationBId": "fb0da811-712d-4596-bac7-9689d3ee07a6",
+    "officerB_denied_stationA": "DENIED: EV-E denied: station scope",
+    "officerB_allowed_own_station": "ALLOWED (0 rows, expected 0 — new empty station)",
+    "officerB_denied_null_station_global": "DENIED: EV-E denied: station is required for this role"
+  },
+  "performance": {
+    "rangeDays": 229,
+    "sessionsInRange": 52681,
+    "report_revenue_summary": {
+      "ms": 640,
+      "rows": 229,
+      "error": null,
+      "underPlatformTimeout": true
+    },
+    "report_payment_method_summary": {
+      "ms": 581,
+      "rows": 1,
+      "error": null,
+      "underPlatformTimeout": true
+    },
+    "report_payment_reconciliation": {
+      "ms": 601,
+      "rows": 229,
+      "error": null,
+      "underPlatformTimeout": true
+    },
+    "report_station_daily_summary": {
+      "ms": 1499,
+      "rows": 229,
+      "error": null,
+      "underPlatformTimeout": true
+    },
+    "report_operator_shift_summary": {
+      "ms": 1316,
+      "rows": 382,
+      "error": null,
+      "underPlatformTimeout": true
+    },
+    "report_import_reconciliation": {
+      "ms": 5856,
+      "rows": 629,
+      "error": null,
+      "underPlatformTimeout": true
+    },
+    "report_billing_reconciliation": {
+      "ms": 3961,
+      "rows": 1000,
+      "error": null,
+      "underPlatformTimeout": true
+    },
+    "report_exception_summary": {
+      "ms": 6066,
+      "rows": 1000,
+      "error": null,
+      "underPlatformTimeout": true
+    },
+    "report_historical_engine_comparison": {
+      "ms": 680,
+      "rows": 3,
+      "error": null,
+      "underPlatformTimeout": true
+    },
+    "report_cash_handover_summary": {
+      "ms": 392,
+      "rows": 7,
+      "error": null,
+      "underPlatformTimeout": true
+    },
+    "wideRangeGuard": {
+      "ms": 290,
+      "error": "EV-E denied: date range too wide (max 400 days); page through history in smaller windows",
+      "rejectedFast": true
+    }
+  },
+  "flagRollback": {
+    "flagDisabledValue": "false",
+    "rpcStillFunctionalWhileUiFlagOff": true,
+    "rowsWhileFlagOff": 17,
+    "flagReenabledValue": "true",
+    "disableToReenableMs": 1758,
+    "note": "reporting_v2_enabled gates the frontend page visibility only (ReportingV2Dashboard shows a blocker screen when false). The report_* RPCs enforce their own independent role/station authorization regardless of this flag, matching the existing Phase C/D pattern (RPC security != UI feature flag)."
+  },
+  "regression": {
+    "duplicateBillingGroups": 0,
+    "flags": [
+      {
+        "key": "billing_engine_v2_enabled",
+        "value": "true"
+      },
+      {
+        "key": "handover_workflow_v1_enabled",
+        "value": "true"
+      },
+      {
+        "key": "import_workflow_v2_enabled",
+        "value": "true"
+      },
+      {
+        "key": "payment_workflow_v1_enabled",
+        "value": "true"
+      },
+      {
+        "key": "reporting_v2_enabled",
+        "value": "true"
+      }
+    ],
+    "nonZeroTaxRows": 0,
+    "nonZeroDemandRows": 0,
+    "anonReadReturnsNoRows": true,
+    "anonBillingRpcDenied": true,
+    "anonReportRpcDenied": true
+  }
+}

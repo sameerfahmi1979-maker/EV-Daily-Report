@@ -1,0 +1,865 @@
+{
+  "project": "qflxupfeyktdrpilctyo",
+  "createdAt": "2026-07-17T08:14:01.357Z",
+  "adminPasswords": {
+    "sameer@algt.net": "UatDAdmin!7c3498319ad89c822007",
+    "tariq@energy-stream.net": "UatDAdmin!001e7772f58aabf4e64d"
+  },
+  "users": {
+    "officerA": {
+      "id": "e6f4d6a7-13ba-4096-b066-31f5849312e7",
+      "email": "uat.d.officerA@energy-stream.net",
+      "password": "UatD!0ee58a4741d615e12793",
+      "role": "import_officer"
+    },
+    "accountant1": {
+      "id": "fec4d69a-e773-4e9b-a449-29fad0bdb4bc",
+      "email": "uat.d.accountant1@energy-stream.net",
+      "password": "UatD!d1f02858d9f4b310617c",
+      "role": "accountant"
+    },
+    "opsmgr1": {
+      "id": "83f81c9d-d1a6-475b-b6f7-9288e0bfc249",
+      "email": "uat.d.opsmgr1@energy-stream.net",
+      "password": "UatD!7ad655a16646af96989c",
+      "role": "operations_manager"
+    },
+    "viewer1": {
+      "id": "052f1da5-ecfa-4794-a8ee-3ce78bb4ef21",
+      "email": "uat.d.viewer1@energy-stream.net",
+      "password": "UatD!c1f219ae371fa3538a6d",
+      "role": "report_viewer"
+    },
+    "pendingUser": {
+      "id": "ed3e088f-9b7c-4bd7-9db1-a2354469f338",
+      "email": "uat.d.pending@energy-stream.net",
+      "password": "UatD!a3ea02daa1f09de45997",
+      "role": "import_officer"
+    },
+    "disabledUser": {
+      "id": "c3c324c7-046d-4601-80f2-d418accf546c",
+      "email": "uat.d.disabled@energy-stream.net",
+      "password": "UatD!87a1dee45a8cc7bdecd2",
+      "role": "import_officer"
+    },
+    "rejectedUser": {
+      "id": "33f93886-e974-48f6-8ab9-56a74741d84b",
+      "email": "uat.d.rejected@energy-stream.net",
+      "password": "UatD!a5a612fbda56bfc8f179",
+      "role": "import_officer"
+    },
+    "officerB": {
+      "id": "6ab1888d-508e-42ab-81ee-58573d0a46ef",
+      "email": "uat.d.officerB@energy-stream.net",
+      "password": "UatD!d28107f0f410da131e6e",
+      "role": "import_officer"
+    }
+  },
+  "stationB": "df8cd47b-42ae-44b0-80d8-b1befdd27f58",
+  "operatorB": "bff696e9-08de-42f6-a022-b607e646e2bd",
+  "stationA": "48f00127-09e8-47f6-8f6a-c3a331b332be",
+  "operatorA": "12a51b90-5690-4495-af6b-5c45cd783aa8",
+  "updatedAt": "2026-07-17T08:32:14.013Z",
+  "batchA": "398cfd39-c025-420c-ad3f-aa81633fc5ea",
+  "batchB": "928ac308-c297-43bd-ae72-5494133d909c",
+  "shifts": {
+    "shortage": {
+      "shiftId": "39f2e039-b62c-4111-904a-7048d372091a",
+      "sessionIds": [
+        "69949e36-01ef-44a5-9317-841b78403851",
+        "c3a58dbf-7a52-48d4-9cbc-ddbcf4f7b70c"
+      ],
+      "sessions": [
+        {
+          "id": "69949e36-01ef-44a5-9317-841b78403851",
+          "transaction_id": "927604799201",
+          "calculated_cost": 0.732
+        },
+        {
+          "id": "c3a58dbf-7a52-48d4-9cbc-ddbcf4f7b70c",
+          "transaction_id": "927604799202",
+          "calculated_cost": 1.098
+        }
+      ]
+    },
+    "surplus": {
+      "shiftId": "f9d58b50-8b2f-403e-b4b9-b8ba65ae4b30",
+      "sessionIds": [
+        "7a67d209-332c-4b02-9375-0947ec69abbb",
+        "532325b8-bd4d-43fe-ae3d-d9a1f481117a"
+      ],
+      "sessions": [
+        {
+          "id": "7a67d209-332c-4b02-9375-0947ec69abbb",
+          "transaction_id": "927604799203",
+          "calculated_cost": 0.915
+        },
+        {
+          "id": "532325b8-bd4d-43fe-ae3d-d9a1f481117a",
+          "transaction_id": "927604799204",
+          "calculated_cost": 1.281
+        }
+      ]
+    },
+    "adjustments": {
+      "shiftId": "ba34fe17-782c-4ee1-ae91-4fef24fb06a1",
+      "sessionIds": [
+        "f39fb924-b097-49ac-9424-ad54b056f33d",
+        "f8568671-d221-4a81-86a9-ff2e19aa1f3c"
+      ],
+      "sessions": [
+        {
+          "id": "f39fb924-b097-49ac-9424-ad54b056f33d",
+          "transaction_id": "927604799205",
+          "calculated_cost": 1.464
+        },
+        {
+          "id": "f8568671-d221-4a81-86a9-ff2e19aa1f3c",
+          "transaction_id": "927604799206",
+          "calculated_cost": 0.549
+        }
+      ]
+    },
+    "reopenCycle": {
+      "shiftId": "1f09d2bd-9323-4771-b287-eeb048fcb6cd",
+      "sessionIds": [
+        "2dbe72cc-5b97-41c2-845a-d1ba1452e3c3",
+        "6ac47f9b-4f64-4818-8d6c-fec7c1adb2fa"
+      ],
+      "sessions": [
+        {
+          "id": "2dbe72cc-5b97-41c2-845a-d1ba1452e3c3",
+          "transaction_id": "927604799207",
+          "calculated_cost": 1.647
+        },
+        {
+          "id": "6ac47f9b-4f64-4818-8d6c-fec7c1adb2fa",
+          "transaction_id": "927604799208",
+          "calculated_cost": 0.366
+        }
+      ]
+    },
+    "roleMatrix": {
+      "shiftId": "bdcb7cd6-7b09-4e9e-859a-744a88cfc4fe",
+      "sessionIds": [
+        "64a47174-a764-44a7-8a8b-ae36b27b857c",
+        "201dc2a9-961d-4a21-bd8d-a015bbdca709"
+      ],
+      "sessions": [
+        {
+          "id": "64a47174-a764-44a7-8a8b-ae36b27b857c",
+          "transaction_id": "927604799209",
+          "calculated_cost": 1.19
+        },
+        {
+          "id": "201dc2a9-961d-4a21-bd8d-a015bbdca709",
+          "transaction_id": "927604799210",
+          "calculated_cost": 0.824
+        }
+      ]
+    },
+    "stationB": {
+      "shiftId": "29b40ac6-f438-4984-8c79-afb70b88397d",
+      "sessionIds": [
+        "48108cee-8958-4ea8-a3b3-a80a9607d4bb"
+      ],
+      "sessions": [
+        {
+          "id": "48108cee-8958-4ea8-a3b3-a80a9607d4bb",
+          "transaction_id": "927604973201",
+          "calculated_cost": 0
+        }
+      ]
+    }
+  },
+  "scenarioShortage": {
+    "handoverId": "e8a62606-07cd-40d3-b0cb-f31ea0dbd00d",
+    "expectedCash": 0.732,
+    "cardTotal": 1.098,
+    "actualCashReceived": 0,
+    "submitWithoutReasonBlankErrorMessage": "EV-D discrepancy reason required: shortage=0.732 surplus=0.000",
+    "submitWithReasonResult": {
+      "ok": true,
+      "status": "submitted",
+      "totals": {
+        "surplus": 0,
+        "shortage": 0.732,
+        "card_total": 1.098,
+        "cash_total": 0.732,
+        "cliq_total": 0,
+        "billing_total": 1.83,
+        "expected_cash": 0.732,
+        "unassigned_count": 0
+      },
+      "discrepancy_reason": "UAT shortage: cash drawer short by 1.000 JOD, verified by officer"
+    },
+    "finalRow": {
+      "id": "e8a62606-07cd-40d3-b0cb-f31ea0dbd00d",
+      "handover_number": "HO-20260717-b7232bfc",
+      "station_id": "48f00127-09e8-47f6-8f6a-c3a331b332be",
+      "operator_id": "12a51b90-5690-4495-af6b-5c45cd783aa8",
+      "shift_id": "39f2e039-b62c-4111-904a-7048d372091a",
+      "shift_date": "2026-07-17",
+      "status": "submitted",
+      "currency": "JOD",
+      "billing_total": 1.83,
+      "cash_total": 0.732,
+      "card_total": 1.098,
+      "cliq_total": 0,
+      "expected_cash": 0.732,
+      "actual_cash_received": 0,
+      "shortage_amount": 0.732,
+      "surplus_amount": 0,
+      "net_adjustments": 0,
+      "unassigned_count": 0,
+      "submitted_by": "e6f4d6a7-13ba-4096-b066-31f5849312e7",
+      "submitted_at": "2026-07-17T11:16:32.537678+03:00",
+      "reviewed_by": null,
+      "reviewed_at": null,
+      "approved_by": null,
+      "approved_at": null,
+      "locked_by": null,
+      "locked_at": null,
+      "rejected_by": null,
+      "rejected_at": null,
+      "rejection_reason": null,
+      "reopened_by": null,
+      "reopened_at": null,
+      "reopen_reason": null,
+      "version": 1,
+      "notes": null,
+      "created_by": "e6f4d6a7-13ba-4096-b066-31f5849312e7",
+      "created_at": "2026-07-17T11:16:31.369314+03:00",
+      "updated_at": "2026-07-17T11:16:32.537678+03:00",
+      "discrepancy_reason": "UAT shortage: cash drawer short by 1.000 JOD, verified by officer"
+    },
+    "cardExcludedFromExpectedCash": true,
+    "auditEntry": {
+      "id": "0671be0f-e124-4a6c-9fa0-776c867b9841",
+      "user_id": "e6f4d6a7-13ba-4096-b066-31f5849312e7",
+      "action": "handover_submit",
+      "entity_type": "cash_handovers",
+      "entity_id": "e8a62606-07cd-40d3-b0cb-f31ea0dbd00d",
+      "details": {
+        "surplus_amount": 0,
+        "shortage_amount": 0.732,
+        "discrepancy_reason": "UAT shortage: cash drawer short by 1.000 JOD, verified by officer",
+        "actual_cash_received": 0
+      },
+      "ip_address": null,
+      "created_at": "2026-07-17T11:16:32.537678+03:00"
+    },
+    "approveResult": {
+      "ok": true,
+      "status": "approved"
+    }
+  },
+  "scenarioSurplus": {
+    "handoverId": "e4656098-85f9-495e-b3f5-e3dd7f669da9",
+    "expectedCash": 0.915,
+    "actualCashReceived": 2.915,
+    "submitWithoutReasonError": "EV-D discrepancy reason required: shortage=0.000 surplus=2.000",
+    "submitWithReasonResult": {
+      "ok": true,
+      "status": "submitted",
+      "totals": {
+        "surplus": 2,
+        "shortage": 0,
+        "card_total": 0,
+        "cash_total": 0.915,
+        "cliq_total": 1.281,
+        "billing_total": 2.196,
+        "expected_cash": 0.915,
+        "unassigned_count": 0
+      },
+      "discrepancy_reason": "UAT surplus: extra 2.000 JOD found in drawer, verified by officer"
+    },
+    "finalRow": {
+      "id": "e4656098-85f9-495e-b3f5-e3dd7f669da9",
+      "handover_number": "HO-20260717-b289a6ca",
+      "station_id": "48f00127-09e8-47f6-8f6a-c3a331b332be",
+      "operator_id": "12a51b90-5690-4495-af6b-5c45cd783aa8",
+      "shift_id": "f9d58b50-8b2f-403e-b4b9-b8ba65ae4b30",
+      "shift_date": "2026-07-17",
+      "status": "submitted",
+      "currency": "JOD",
+      "billing_total": 2.196,
+      "cash_total": 0.915,
+      "card_total": 0,
+      "cliq_total": 1.281,
+      "expected_cash": 0.915,
+      "actual_cash_received": 2.915,
+      "shortage_amount": 0,
+      "surplus_amount": 2,
+      "net_adjustments": 0,
+      "unassigned_count": 0,
+      "submitted_by": "e6f4d6a7-13ba-4096-b066-31f5849312e7",
+      "submitted_at": "2026-07-17T11:16:50.94255+03:00",
+      "reviewed_by": null,
+      "reviewed_at": null,
+      "approved_by": null,
+      "approved_at": null,
+      "locked_by": null,
+      "locked_at": null,
+      "rejected_by": null,
+      "rejected_at": null,
+      "rejection_reason": null,
+      "reopened_by": null,
+      "reopened_at": null,
+      "reopen_reason": null,
+      "version": 1,
+      "notes": null,
+      "created_by": "e6f4d6a7-13ba-4096-b066-31f5849312e7",
+      "created_at": "2026-07-17T11:16:50.073843+03:00",
+      "updated_at": "2026-07-17T11:16:50.94255+03:00",
+      "discrepancy_reason": "UAT surplus: extra 2.000 JOD found in drawer, verified by officer"
+    },
+    "cliqExcludedFromExpectedCash": true,
+    "auditEntry": {
+      "id": "2dedfbbd-e93c-4b14-b3f9-1246c3c824e5",
+      "user_id": "e6f4d6a7-13ba-4096-b066-31f5849312e7",
+      "action": "handover_submit",
+      "entity_type": "cash_handovers",
+      "entity_id": "e4656098-85f9-495e-b3f5-e3dd7f669da9",
+      "details": {
+        "surplus_amount": 2,
+        "shortage_amount": 0,
+        "discrepancy_reason": "UAT surplus: extra 2.000 JOD found in drawer, verified by officer",
+        "actual_cash_received": 2.915
+      },
+      "ip_address": null,
+      "created_at": "2026-07-17T11:16:50.94255+03:00"
+    }
+  },
+  "scenarioAdjustments": {
+    "handoverId": "65585eef-dbae-470e-b212-0882e7075b8c",
+    "baseExpected": 2.013,
+    "expectedUnchangedAfterCreate": true,
+    "selfApproveDenied": "DENIED: EV-D denied",
+    "expectedIncreasedByExactAmount": true,
+    "expectedUnchangedBeforeNegApproval": true,
+    "expectedDecreasedByExactAmount": true,
+    "rejectWithoutReasonErr": "EV-D rejection reason required",
+    "rejectResult": {
+      "ok": true,
+      "status": "rejected"
+    },
+    "expectedUnchangedByRejection": true,
+    "rejectedAdjustmentVisible": true,
+    "rejectedAdjustmentRow": {
+      "id": "a2d2cf6b-ff89-4103-bd94-fa9e25364a7f",
+      "handover_id": "65585eef-dbae-470e-b212-0882e7075b8c",
+      "adjustment_type": "cash_adjustment",
+      "cash_impact": "increase",
+      "amount_jod": 5,
+      "reason": "UAT adjustment intended for rejection",
+      "evidence_reference": null,
+      "status": "rejected",
+      "requested_by": "e6f4d6a7-13ba-4096-b066-31f5849312e7",
+      "approved_by": null,
+      "created_at": "2026-07-17T11:19:12.282976+03:00",
+      "approved_at": null,
+      "rejection_reason": "UAT: insufficient evidence provided",
+      "rejected_by": "fec4d69a-e773-4e9b-a449-29fad0bdb4bc",
+      "rejected_at": "2026-07-17T11:19:12.866108+03:00"
+    },
+    "hoLockedStatus": "locked",
+    "lockProtection": {
+      "createAfterLock": "DENIED: EV-D cannot adjust locked handover",
+      "approveAfterLock": "DENIED: EV-D cannot approve adjustment on locked handover",
+      "rejectAfterLock": "DENIED: EV-D denied: handover locked",
+      "directTableUpdateAfterLock": "DENIED: permission denied for table cash_handover_adjustments",
+      "directTableDeleteAfterLock": "DENIED: permission denied for table cash_handover_adjustments"
+    }
+  },
+  "scenarioReopenCycle": {
+    "handoverId": "e8b7ff48-0a7c-4f1e-bfd1-d26591a0082e",
+    "expected0": 1.647,
+    "selfApproveDenied": "DENIED: EV-D denied: cannot approve own handover",
+    "approve1": {
+      "ok": true,
+      "status": "approved"
+    },
+    "lock1": {
+      "ok": true,
+      "status": "locked"
+    },
+    "eventsAfterFirstLock": 4,
+    "lockedRecalcDenied": "DENIED: EV-B denied: recalculate billing not permitted for this station",
+    "reopenNoReasonErr": "EV-D reopen reason required",
+    "reopenResult": {
+      "ok": true,
+      "status": "reopened"
+    },
+    "versionAfterReopen": 2,
+    "resubmit": {
+      "ok": true,
+      "status": "submitted",
+      "totals": {
+        "surplus": 0,
+        "shortage": 0,
+        "card_total": 0.366,
+        "cash_total": 1.647,
+        "cliq_total": 0,
+        "billing_total": 2.013,
+        "expected_cash": 1.647,
+        "unassigned_count": 0
+      },
+      "discrepancy_reason": null
+    },
+    "approve2": {
+      "ok": true,
+      "status": "approved"
+    },
+    "lock2": {
+      "ok": true,
+      "status": "locked"
+    },
+    "finalStatus": "locked",
+    "finalVersion": 2,
+    "fullEventSequence": [
+      {
+        "from": null,
+        "to": "draft",
+        "action": "create_draft",
+        "at": "2026-07-17T11:19:25.749924+03:00"
+      },
+      {
+        "from": "draft",
+        "to": "submitted",
+        "action": "submit",
+        "at": "2026-07-17T11:19:26.333247+03:00"
+      },
+      {
+        "from": "submitted",
+        "to": "approved",
+        "action": "approve",
+        "at": "2026-07-17T11:19:26.913691+03:00"
+      },
+      {
+        "from": "approved",
+        "to": "locked",
+        "action": "lock",
+        "at": "2026-07-17T11:19:27.203218+03:00"
+      },
+      {
+        "from": "locked",
+        "to": "reopened",
+        "action": "reopen",
+        "at": "2026-07-17T11:19:28.357573+03:00"
+      },
+      {
+        "from": "reopened",
+        "to": "submitted",
+        "action": "submit",
+        "at": "2026-07-17T11:19:28.929446+03:00"
+      },
+      {
+        "from": "submitted",
+        "to": "approved",
+        "action": "approve",
+        "at": "2026-07-17T11:19:29.219757+03:00"
+      },
+      {
+        "from": "approved",
+        "to": "locked",
+        "action": "lock",
+        "at": "2026-07-17T11:19:29.508923+03:00"
+      }
+    ]
+  },
+  "scenarioSelfApproveEmergency": {
+    "handoverId": "9640182d-2d2e-4bfe-97cf-0b8e589e0784",
+    "shiftId": "91fae5c6-8f6d-4a8f-8bd7-edf92a1538f4",
+    "selfApproveAsSystemAdmin": "ALLOWED (expected: system_admin emergency bypass)",
+    "selfApprove": {
+      "ok": true,
+      "status": "approved"
+    }
+  },
+  "roleMatrix": {
+    "handoverId": "b25070fa-e982-4b9d-bcab-66850fd90d47",
+    "results": {
+      "officer_assign_payment": {
+        "ALLOWED": true,
+        "data": {
+          "ok": true,
+          "amount": 1.19,
+          "allocation_id": "786c3226-5cf2-460a-8b3c-d0f42306227b"
+        }
+      },
+      "officer_submit": {
+        "ALLOWED": true,
+        "data": {
+          "ok": true,
+          "status": "submitted",
+          "totals": {
+            "surplus": 0,
+            "shortage": 0,
+            "card_total": 0.824,
+            "cash_total": 1.19,
+            "cliq_total": 0,
+            "billing_total": 2.014,
+            "expected_cash": 1.19,
+            "unassigned_count": 0
+          },
+          "discrepancy_reason": null
+        }
+      },
+      "officer_approve_denied": "DENIED: EV-D denied: approve role",
+      "officer_reopen_denied": "DENIED: EV-D denied: reopen requires ops/admin",
+      "accountant_approve": {
+        "ALLOWED": true,
+        "data": {
+          "ok": true,
+          "status": "approved"
+        }
+      },
+      "accountant_lock": {
+        "ALLOWED": true,
+        "data": {
+          "ok": true,
+          "status": "locked"
+        }
+      },
+      "accountant_manage_tariffs_denied": {
+        "ALLOWED": true,
+        "data": false
+      },
+      "accountant_direct_update_rate_structures_denied": {
+        "ALLOWED": true,
+        "data": null
+      },
+      "accountant_alter_import_identity_denied": {
+        "ALLOWED": true,
+        "data": null
+      },
+      "opsmgr_reopen": {
+        "ALLOWED": true,
+        "data": {
+          "ok": true,
+          "status": "reopened"
+        }
+      },
+      "opsmgr_approve": {
+        "ALLOWED": true,
+        "data": {
+          "ok": true,
+          "status": "approved"
+        }
+      },
+      "opsmgr_lock": {
+        "ALLOWED": true,
+        "data": {
+          "ok": true,
+          "status": "locked"
+        }
+      },
+      "viewer_read": {
+        "ALLOWED": true,
+        "data": [
+          {
+            "id": "b25070fa-e982-4b9d-bcab-66850fd90d47"
+          }
+        ]
+      },
+      "viewer_assign_denied": "DENIED: EV-D denied: role cannot assign payment method",
+      "viewer_submit_denied": "DENIED: EV-D denied",
+      "viewer_approve_denied": "DENIED: EV-D denied: approve role",
+      "viewer_lock_denied": "DENIED: EV-D denied",
+      "viewer_reopen_denied": "DENIED: EV-D denied: reopen requires ops/admin",
+      "pendingUser_assign_denied": "DENIED: EV-D denied: role cannot assign payment method",
+      "pendingUser_read_denied_or_empty": {
+        "ALLOWED": true,
+        "data": []
+      },
+      "disabledUser_assign_denied": "DENIED: EV-D denied: role cannot assign payment method",
+      "disabledUser_read_denied_or_empty": {
+        "ALLOWED": true,
+        "data": []
+      },
+      "rejectedUser_assign_denied": "DENIED: EV-D denied: role cannot assign payment method",
+      "rejectedUser_read_denied_or_empty": {
+        "ALLOWED": true,
+        "data": []
+      },
+      "anon_read_handovers": {
+        "ALLOWED": true,
+        "data": []
+      },
+      "anon_assign_denied": "DENIED: permission denied for function assign_session_payment_method",
+      "anon_submit_denied": "DENIED: permission denied for function submit_handover",
+      "anon_direct_insert_denied": "DENIED: permission denied for table cash_handovers"
+    }
+  },
+  "crossStation": {
+    "handoverBId": "3f8928b1-f09f-43e9-839b-6f1924da3c5c",
+    "results": {
+      "officerA_assign_on_stationB_denied": "DENIED: EV-D denied: role cannot assign payment method",
+      "officerB_assign_on_stationA_denied": "DENIED: EV-D denied: role cannot assign payment method",
+      "officerA_read_stationB_handover": {
+        "ALLOWED": true,
+        "data": []
+      },
+      "officerA_submit_stationB_handover_denied": "DENIED: EV-D denied",
+      "officerA_approve_stationB_handover_denied": "DENIED: EV-D denied: approve role",
+      "forged_station_id_denied": "DENIED: EV-D denied: role cannot assign payment method"
+    },
+    "note": "Single production station (STATION-1); a temporary disposable second station+operator fixture was created for this test and will be removed in cleanup."
+  },
+  "lockedMutationMatrix": {
+    "lockedHandoverId": "65585eef-dbae-470e-b212-0882e7075b8c",
+    "sessionId": "f39fb924-b097-49ac-9424-ad54b056f33d",
+    "matrix": [
+      {
+        "action": "change_payment_method",
+        "role": "import_officer",
+        "method": "RPC",
+        "outcome": "DENIED: EV-D denied: session is in a locked handover",
+        "dbUnchanged": true
+      },
+      {
+        "action": "add_remove_session_from_handover",
+        "role": "import_officer",
+        "method": "direct table",
+        "outcome": "DENIED: permission denied for table cash_handover_sessions",
+        "dbUnchanged": true
+      },
+      {
+        "action": "recalculate_session_billing_v2",
+        "role": "operations_manager (authorized role)",
+        "method": "RPC",
+        "outcome": "DENIED: EV-D denied: billing breakdown locked by cash handover",
+        "dbUnchanged": true
+      },
+      {
+        "action": "recalculate_batch_billing_v2",
+        "role": "operations_manager (authorized role)",
+        "method": "RPC",
+        "outcome": {
+          "ALLOWED": true,
+          "data": {
+            "billed": 4,
+            "engine": "ev-b-v2.0.0",
+            "errors": [
+              {
+                "error": "EV-D denied: billing breakdown locked by cash handover",
+                "session_id": "f39fb924-b097-49ac-9424-ad54b056f33d"
+              },
+              {
+                "error": "EV-D denied: billing breakdown locked by cash handover",
+                "session_id": "f8568671-d221-4a81-86a9-ff2e19aa1f3c"
+              },
+              {
+                "error": "EV-D denied: billing breakdown locked by cash handover",
+                "session_id": "2dbe72cc-5b97-41c2-845a-d1ba1452e3c3"
+              },
+              {
+                "error": "EV-D denied: billing breakdown locked by cash handover",
+                "session_id": "6ac47f9b-4f64-4818-8d6c-fec7c1adb2fa"
+              },
+              {
+                "error": "EV-D denied: billing breakdown locked by cash handover",
+                "session_id": "201dc2a9-961d-4a21-bd8d-a015bbdca709"
+              },
+              {
+                "error": "EV-D denied: billing breakdown locked by cash handover",
+                "session_id": "64a47174-a764-44a7-8a8b-ae36b27b857c"
+              }
+            ],
+            "failed": 6,
+            "batch_id": "398cfd39-c025-420c-ad3f-aa81633fc5ea"
+          }
+        },
+        "dbUnchanged": true
+      },
+      {
+        "action": "recalculate_shift_totals",
+        "role": "operations_manager (authorized role)",
+        "method": "RPC",
+        "outcome": {
+          "ALLOWED": true,
+          "data": {
+            "shift_id": "ba34fe17-782c-4ee1-ae91-4fef24fb06a1",
+            "session_count": 2,
+            "total_kwh": 11,
+            "total_amount_jod": 2.013
+          }
+        },
+        "dbUnchanged": true
+      },
+      {
+        "action": "replace_session_billing",
+        "role": "operations_manager (authorized role)",
+        "method": "RPC",
+        "outcome": "DENIED: EV-D denied: billing breakdown locked by cash handover",
+        "dbUnchanged": true
+      },
+      {
+        "action": "reassign_operator",
+        "role": "system_admin (service-level attempt via authenticated update)",
+        "method": "direct table",
+        "outcome": {
+          "ALLOWED": true,
+          "data": null
+        },
+        "dbUnchanged": true
+      },
+      {
+        "action": "reassign_shift",
+        "role": "accountant",
+        "method": "direct table",
+        "outcome": {
+          "ALLOWED": true,
+          "data": null
+        },
+        "dbUnchanged": true
+      },
+      {
+        "action": "delete_cancel_import_batch",
+        "role": "system_admin (service-role bypass check via authenticated)",
+        "method": "RPC",
+        "outcome": "DENIED: EV-C cannot cancel a posted financial batch",
+        "dbUnchanged": true
+      },
+      {
+        "action": "delete_session",
+        "role": "accountant",
+        "method": "direct table",
+        "outcome": {
+          "ALLOWED": true,
+          "data": null
+        },
+        "dbUnchanged": true
+      },
+      {
+        "action": "modify_actual_cash",
+        "role": "import_officer",
+        "method": "direct table",
+        "outcome": "DENIED: permission denied for table cash_handovers",
+        "dbUnchanged": true
+      },
+      {
+        "action": "modify_expected_cash",
+        "role": "import_officer",
+        "method": "direct table",
+        "outcome": "DENIED: permission denied for table cash_handovers",
+        "dbUnchanged": true
+      },
+      {
+        "action": "modify_adjustment",
+        "role": "accountant",
+        "method": "direct table",
+        "outcome": "DENIED: permission denied for table cash_handover_adjustments",
+        "dbUnchanged": true
+      },
+      {
+        "action": "direct_table_status_bypass",
+        "role": "import_officer",
+        "method": "direct table",
+        "outcome": "DENIED: permission denied for table cash_handovers",
+        "dbUnchanged": true
+      },
+      {
+        "action": "delete_billing_breakdown_item",
+        "role": "accountant",
+        "method": "direct table",
+        "outcome": {
+          "ALLOWED": true,
+          "data": null
+        },
+        "dbUnchanged": true
+      }
+    ],
+    "finalHoStatus": "locked",
+    "sessionUnchanged": true
+  },
+  "lockedMutationMatrixServiceRoleTriggerVerification": {
+    "note": "Several client-role attempts in lockedMutationMatrix returned no error AND no DB change because no RLS policy grants authenticated UPDATE/DELETE on charging_sessions/billing_breakdown_items/import_batches at all (pre-existing, not Phase D). To isolate and prove the NEW Phase D triggers themselves (which must hold even if such a policy is added later, and DO apply to service_role since triggers are not bypassed by BYPASSRLS), the same mutations were re-attempted directly with the service_role key (bypasses RLS/grants entirely).",
+    "reassign_operator": "DENIED: EV-D denied: session locked by cash handover",
+    "reassign_shift": "DENIED: EV-D denied: session locked by cash handover",
+    "delete_session": "DENIED: EV-D denied: session locked by cash handover",
+    "delete_breakdown_item": "DENIED: EV-D denied: billing breakdown locked by cash handover",
+    "delete_import_batch": "DENIED: EV-D denied: batch has sessions locked by cash handover",
+    "dbUnchangedAfterAllAttempts": true
+  },
+  "directApiSecurity": {
+    "anon_mutation_denied": "DENIED: permission denied for function lock_handover",
+    "pending_mutation_denied": "DENIED: EV-D denied: role cannot assign payment method",
+    "report_viewer_mutation_denied": "DENIED: EV-D denied",
+    "import_officer_approve_denied": "DENIED: EV-D denied: approve role",
+    "accountant_reopen_denied": "DENIED: EV-D denied: reopen requires ops/admin",
+    "opsmgr_reopen_allowed": {
+      "ALLOWED": true,
+      "data": {
+        "ok": true,
+        "status": "reopened"
+      }
+    },
+    "opsmgr_relock_after_direct_api_test": {
+      "ALLOWED": true,
+      "data": {
+        "ok": true,
+        "status": "locked"
+      }
+    }
+  },
+  "regressionA1A2BC": {
+    "duplicateBillingGroups": 0,
+    "sessionsCount": 84322,
+    "billingCount": 84316,
+    "flags": [
+      {
+        "key": "billing_engine_v2_enabled",
+        "value": "true"
+      },
+      {
+        "key": "import_workflow_v2_enabled",
+        "value": "true"
+      },
+      {
+        "key": "payment_workflow_v1_enabled",
+        "value": "true"
+      },
+      {
+        "key": "handover_workflow_v1_enabled",
+        "value": "true"
+      }
+    ],
+    "anonReadReturnsNoRows": true,
+    "anonReadError": null,
+    "anonBillingRpcBlocked": true
+  },
+  "flagRollback": {
+    "denyPayment": "DENIED: EV-D denied: payment_workflow_v1_enabled is not true",
+    "denyHandover": "DENIED: EV-D denied: handover_workflow_v1_enabled is not true",
+    "historyReadableWhileDisabled": {
+      "ALLOWED": true,
+      "data": [
+        {
+          "id": "65585eef-dbae-470e-b212-0882e7075b8c",
+          "status": "locked"
+        }
+      ]
+    },
+    "flagsDuring": [
+      {
+        "key": "billing_engine_v2_enabled",
+        "value": "true"
+      },
+      {
+        "key": "import_workflow_v2_enabled",
+        "value": "true"
+      }
+    ],
+    "restoredAfterReenable": {
+      "ALLOWED": true,
+      "data": {
+        "ok": true,
+        "amount": 0.732,
+        "allocation_id": "5ea18200-2b72-41ed-a2ed-20482fe72dce"
+      }
+    },
+    "disableToReenableMs": 1731
+  }
+}

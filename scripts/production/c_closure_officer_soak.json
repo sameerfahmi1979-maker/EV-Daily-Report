@@ -1,0 +1,24 @@
+{
+  "officerId": "d84a3fee-d046-4cf9-a9ad-cca037412ff1",
+  "email": "uat.import.officer+cclosure@energy-stream.net",
+  "batchId": "736c4a1e-b07d-4819-8cce-3b470cf3b106",
+  "txn": "9001707179183",
+  "postResult": {
+    "ok": true,
+    "errors": [],
+    "failed": 0,
+    "status": "posted",
+    "billing": {
+      "billed": 1,
+      "engine": "ev-b-v2.0.0",
+      "errors": [],
+      "failed": 0,
+      "batch_id": "736c4a1e-b07d-4819-8cce-3b470cf3b106"
+    },
+    "skipped": 0,
+    "inserted": 1,
+    "operator_match_status": "match"
+  },
+  "postError": null,
+  "disabledAfter": true
+}

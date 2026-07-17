@@ -1,0 +1,130 @@
+{
+  "startedAt": "2026-07-17T11:31:19.039Z",
+  "scenarios": {
+    "flags_step1": {
+      "historical_comparison_enabled": "true"
+    },
+    "UAT-F-01": {
+      "status": "PASS",
+      "summary_total_sessions": 44137,
+      "direct_sql_count": 44137,
+      "missing_billing_count": 6
+    },
+    "UAT-F-02": {
+      "status": "PASS",
+      "session_id": "abd32c40-5d4d-4e94-8a15-f1cb68f1c397",
+      "match_tier": "exact",
+      "difference": 0,
+      "non_mutating_verified": true
+    },
+    "UAT-F-03": {
+      "status": "PASS",
+      "correction_id": "7a2a55ad-1bc2-4d7e-80ad-39f0a0516523",
+      "self_approve_denied": true,
+      "viewer_approve_denied": true,
+      "station_manager_approve_denied": true,
+      "ops_manager_approved": true
+    },
+    "UAT-F-duplicate-blocked": {
+      "status": "PASS",
+      "blocked_error": "EV-F denied: an active correction already exists for this session"
+    },
+    "UAT-F-04": {
+      "status": "PASS",
+      "correction_id": "7a2a55ad-1bc2-4d7e-80ad-39f0a0516523",
+      "before_engine_version": null,
+      "after_engine_version": "ev-b-v2.0.0",
+      "total_unchanged": true
+    },
+    "UAT-F-05": {
+      "status": "PASS",
+      "correction_id": "7a2a55ad-1bc2-4d7e-80ad-39f0a0516523",
+      "restored_engine_version": null,
+      "exact_restore_verified": true
+    },
+    "UAT-F-06": {
+      "status": "PASS",
+      "correction_id": "d930aa85-ed51-4332-99d6-4bc6857fd7d4",
+      "locked_handover_id": "fa5275ee-e4ba-4d5d-8cff-78a825f8c791",
+      "apply_blocked": true,
+      "blocked_error": "EV-F denied: session is in a locked handover; reopen the handover before correcting"
+    },
+    "UAT-F-material-pilot": {
+      "status": "PASS",
+      "corrected_total": 3.294,
+      "note": "synthetic fixture — material mismatch corrected to true v2 total after handover reopened"
+    },
+    "UAT-F-07": {
+      "status": "PASS",
+      "billing_id": "db5bf396-e203-4f63-bbfb-249cd7504e3f",
+      "investigation_basis": "cannot_determine",
+      "investigation_confidence": "low",
+      "automated_repair_rejected": true,
+      "rejection_reason": "EV-F denied: insufficient evidence for automated backfill (basis=cannot_determine, confidence=low). Use manual correction workflow instead.",
+      "note": "Automated high-confidence backfill correctly rejects totals-only evidence; metadata repair for real historical rows goes through the governed correction queue (see UAT-F-04) which requires explicit human approval."
+    },
+    "UAT-F-08": {
+      "status": "PASS",
+      "batch_cash_without_evidence_blocked": true,
+      "unknown_classification_id": "0305cf1f-b832-4a89-8c40-5b32ac4746e8",
+      "applied_count": 1,
+      "allocations_after_unknown": 0,
+      "note": "Unknown/Deferred correctly write NO allocation row — session remains unassigned by design, never guessed."
+    },
+    "UAT-F-09": {
+      "status": "PASS",
+      "total_count": 44132,
+      "page0_rows": 500,
+      "page_at_1000_rows": 500
+    },
+    "UAT-F-10": {
+      "status": "PASS",
+      "exception_status_filter_rows": 50,
+      "payment_method_filter_rows": 50
+    },
+    "UAT-F-11": {
+      "status": "PASS",
+      "flag_toggle_verified": true,
+      "banner_wired": true,
+      "matrix_doc_present": true
+    },
+    "UAT-F-12": {
+      "status": "PASS",
+      "total_count": 44132,
+      "collected_via_pagination": 44132
+    },
+    "UAT-F-13": {
+      "status": "PASS",
+      "anonymous_denied": true,
+      "pending_denied": true,
+      "cross_station_denied": true
+    },
+    "UAT-F-14": {
+      "status": "PASS",
+      "batch_compare_200_rows_ms": 789,
+      "rows_returned": 200,
+      "inventory_summary_wide_range_ms": 984,
+      "hard_cap_per_page": 200
+    },
+    "UAT-F-15": {
+      "status": "PASS",
+      "a1_duplicate_billing_groups": 0,
+      "flags": {
+        "billing_engine_v2_enabled": "true",
+        "import_workflow_v2_enabled": "true",
+        "payment_workflow_v1_enabled": "true",
+        "handover_workflow_v1_enabled": "true",
+        "reporting_v2_enabled": "true"
+      },
+      "reporting_v2_still_functional": true,
+      "revenue_summary_rows": 7
+    },
+    "final_flags": {
+      "historical_comparison_enabled": "true",
+      "historical_correction_enabled": "true",
+      "historical_payment_classification_enabled": "true",
+      "legacy_report_retirement_enabled": "false"
+    }
+  },
+  "finishedAt": "2026-07-17T11:33:57.356Z"
+}

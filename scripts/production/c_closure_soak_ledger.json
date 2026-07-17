@@ -1,0 +1,33 @@
+{
+  "project": "qflxupfeyktdrpilctyo",
+  "file": "sample files/uat/2026-07-17+abo saleh+c-soak.xlsx",
+  "fileHash": "4c596acb8ffdd7a52f49d691ecdf1ca7d08cfa900cfc78f9942e76d24358f918",
+  "batchId": "9dbf9daf-16ba-47e4-8dc2-f44250d8d9c7",
+  "operatorId": "12a51b90-5690-4495-af6b-5c45cd783aa8",
+  "stationId": "48f00127-09e8-47f6-8f6a-c3a331b332be",
+  "postedByAdmin": "5bbb7898-638e-4a95-b4c5-3bd0cae57a7c",
+  "inserted": 4,
+  "status": "posted",
+  "billing": {
+    "900170717001": { "total": 1.93, "summary": "MID@0.193", "overnight": true },
+    "900170717002": { "total": 1.138, "summary": "Mid-Peak@0.193, Off-Peak@0.183", "boundary": true },
+    "900170717003": { "total": 1.544, "summary": "Mid-Peak@0.193" },
+    "900170717004": { "total": 0.915, "summary": "Off-Peak@0.183" }
+  },
+  "engine": "ev-b-v2.0.0",
+  "taxes": 0,
+  "conflictBatchId": "127d9afa-80d9-4788-8bea-8333489a3560",
+  "conflictResult": "review_required",
+  "duplicateBatchId": "2557a259-0c7b-40a2-aceb-a40762269921",
+  "duplicateResult": "duplicate",
+  "officerSoak": {
+    "batchId": "736c4a1e-b07d-4819-8cce-3b470cf3b106",
+    "txn": "9001707179183",
+    "result": "posted"
+  },
+  "flagRollback": {
+    "disabledDenied": "EV-C denied: import_workflow_v2_enabled is not true",
+    "reenabled": true,
+    "officerEnabled": true
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "shiftId": "b4e3b3cd-0c0a-448b-ab77-726eb2d02727",
+  "handoverId": "35360a64-2552-4803-ad2e-abfcd40f3667",
+  "handoverNumber": "HO-20260716-b49adb90",
+  "status": "reopened",
+  "billing_total": 5.527,
+  "cash_total": 2.845,
+  "card_total": 1.138,
+  "cliq_total": 1.544,
+  "expected_cash": 2.845,
+  "actual_cash_received": 2.845,
+  "shortage_amount": 0,
+  "surplus_amount": 0,
+  "allocations": [
+    {
+      "payment_method": "Cash",
+      "amount_jod": 1.93
+    },
+    {
+      "payment_method": "Card",
+      "amount_jod": 1.138
+    },
+    {
+      "payment_method": "CliQ",
+      "amount_jod": 1.544
+    },
+    {
+      "payment_method": "Cash",
+      "amount_jod": 0.915
+    }
+  ],
+  "cashExcludesCardCliq": true,
+  "lockedBillingDenied": true,
+  "flagRollbackDenied": true,
+  "flagsReenabled": true
+}

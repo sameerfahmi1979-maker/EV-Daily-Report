@@ -1,0 +1,71 @@
+{
+  "when": "2026-07-16T19:35:33.175Z",
+  "results": [
+    {
+      "name": "Anon cannot read charging_sessions",
+      "pass": true,
+      "detail": "rows=0"
+    },
+    {
+      "name": "Anon cannot read billing_calculations",
+      "pass": true,
+      "detail": "rows=0"
+    },
+    {
+      "name": "Anon cannot call replace_session_billing",
+      "pass": true,
+      "detail": "permission denied for function replace_session_billing"
+    },
+    {
+      "name": "Anon cannot read billing archive",
+      "pass": true,
+      "detail": "rows=0"
+    },
+    {
+      "name": "Pending cannot read charging_sessions",
+      "pass": true,
+      "detail": "rows=0"
+    },
+    {
+      "name": "Station manager can read stations in scope",
+      "pass": true,
+      "detail": "stations=1"
+    },
+    {
+      "name": "Station manager cannot manage tariffs (insert denied)",
+      "pass": true,
+      "detail": "new row violates row-level security policy for table \"rate_structures\""
+    },
+    {
+      "name": "Import officer can read import_batches (or empty allowed)",
+      "pass": true,
+      "detail": "rows=0"
+    },
+    {
+      "name": "Import officer cannot recalculate billing RPC",
+      "pass": true,
+      "detail": "EV-A2 denied: session not found or missing station"
+    },
+    {
+      "name": "Report viewer can read stations",
+      "pass": true,
+      "detail": "ok"
+    },
+    {
+      "name": "Report viewer cannot call financial mutation RPC",
+      "pass": true,
+      "detail": "EV-A2 denied: session not found or missing station"
+    },
+    {
+      "name": "System admin can read user_profiles",
+      "pass": true,
+      "detail": "profiles=10"
+    },
+    {
+      "name": "Client URL targets staging project",
+      "pass": true,
+      "detail": "https://dmbmzjnpbmakotvlckkq.supabase.co"
+    }
+  ],
+  "failed": 0
+}

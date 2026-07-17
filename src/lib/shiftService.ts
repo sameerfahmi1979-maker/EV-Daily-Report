@@ -1,0 +1,413 @@
+// =============================================
+// shiftService.ts
+// CRUD + aggregation for shifts table
+// =============================================
+import { supabase } from './supabase';
+import { normalizeSessionsBillingEmbed } from './billingService';
+
+export interface Shift {
+  id: string;
+  station_id: string | null;
+  operator_id: string | null;
+  shift_duration: '8h' | '12h';
+  shift_type: 'morning' | 'evening' | 'night' | 'extended_day' | 'extended_night';
+  shift_date: string;
+  start_time: string;
+  end_time: string;
+  import_batch_id: string | null;
+  total_kwh: number;
+  total_amount_jod: number;
+  handover_status: 'pending' | 'printed' | 'deposited' | 'handed_over';
+  bank_deposit_slip: string | null;
+  bank_deposit_date: string | null;
+  bank_deposit_reference: string | null;
+  notes: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  // Joined data
+  stations?: { name: string } | null;
+  operators?: { name: string; card_number: string } | null;
+}
+
+export interface CreateShiftInput {
+  station_id: string;
+  operator_id: string;
+  shift_duration: '8h' | '12h';
+  shift_type: string;
+  shift_date: string;
+  start_time: string;
+  end_time: string;
+  import_batch_id?: string;
+  notes?: string;
+}
+
+// Shift type definitions for time calculations
+export const SHIFT_TYPES: Record<string, { label: string; duration: '8h' | '12h'; defaultStart: string; defaultEnd: string }> = {
+  morning:        { label: 'Morning (00:00–08:00)',        duration: '8h',  defaultStart: '00:00', defaultEnd: '08:00' },
+  evening:        { label: 'Evening (08:00–16:00)',        duration: '8h',  defaultStart: '08:00', defaultEnd: '16:00' },
+  night:          { label: 'Night (16:00–00:00)',          duration: '8h',  defaultStart: '16:00', defaultEnd: '00:00' },
+  extended_day:   { label: 'Extended Day (08:00–20:00)',   duration: '12h', defaultStart: '08:00', defaultEnd: '20:00' },
+  extended_night: { label: 'Extended Night (20:00–08:00)', duration: '12h', defaultStart: '20:00', defaultEnd: '08:00' },
+};
+
+/**
+ * Create a new shift record.
+ */
+export async function createShift(input: CreateShiftInput): Promise<Shift> {
+  const { data, error } = await supabase
+    .from('shifts')
+    .insert([{
+      station_id: input.station_id,
+      operator_id: input.operator_id,
+      shift_duration: input.shift_duration,
+      shift_type: input.shift_type,
+      shift_date: input.shift_date,
+      start_time: input.start_time,
+      end_time: input.end_time,
+      import_batch_id: input.import_batch_id || null,
+      notes: input.notes || null,
+      handover_status: 'pending',
+      total_kwh: 0,
+      total_amount_jod: 0,
+    }])
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data as Shift;
+}
+
+/**
+ * Get shifts with optional filters (fetches all matching rows, no pagination —
+ * kept for callers that need the full list; the Shift Management page uses
+ * getShiftsPaginated instead).
+ */
+export async function getShifts(filters?: {
+  station_id?: string;
+  operator_id?: string;
+  date_from?: string;
+  date_to?: string;
+  handover_status?: string;
+}): Promise<Shift[]> {
+  let query = supabase
+    .from('shifts')
+    .select('*, stations(name), operators(name, card_number)')
+    .order('shift_date', { ascending: false })
+    .order('start_time', { ascending: false });
+
+  if (filters?.station_id) {
+    query = query.eq('station_id', filters.station_id);
+  }
+  if (filters?.operator_id) {
+    query = query.eq('operator_id', filters.operator_id);
+  }
+  if (filters?.date_from) {
+    query = query.gte('shift_date', filters.date_from);
+  }
+  if (filters?.date_to) {
+    query = query.lte('shift_date', filters.date_to);
+  }
+  if (filters?.handover_status) {
+    query = query.eq('handover_status', filters.handover_status);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data || []) as Shift[];
+}
+
+export interface PaginatedShiftsResult {
+  shifts: Shift[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  totalRevenue: number;
+  totalKwh: number;
+  pendingCount: number;
+}
+
+/**
+ * Get shifts with true server-side pagination + search, via a SECURITY
+ * DEFINER RPC (get_shifts_paginated). Resolves station access once instead
+ * of relying on shifts_select_scoped RLS evaluating current_user_has_station_access
+ * per row — same fix applied to the Billing page's session list.
+ */
+export async function getShiftsPaginated(filters: {
+  station_id?: string;
+  operator_id?: string;
+  handover_status?: string;
+  date_from?: string;
+  date_to?: string;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+} = {}): Promise<PaginatedShiftsResult> {
+  const page = filters.page || 1;
+  const pageSize = filters.pageSize || 25;
+  const offset = (page - 1) * pageSize;
+
+  const { data, error } = await supabase.rpc('get_shifts_paginated', {
+    p_station_id: filters.station_id || null,
+    p_operator_id: filters.operator_id || null,
+    p_handover_status: filters.handover_status || null,
+    p_date_from: filters.date_from || null,
+    p_date_to: filters.date_to || null,
+    p_search: filters.search || null,
+    p_limit: pageSize,
+    p_offset: offset,
+  });
+
+  if (error) throw error;
+
+  const result = data as {
+    shifts: Shift[];
+    total_count: number;
+    total_revenue: number;
+    total_kwh: number;
+    pending_count: number;
+  };
+  const totalCount = result?.total_count || 0;
+
+  return {
+    shifts: result?.shifts || [],
+    totalCount,
+    page,
+    pageSize,
+    totalPages: Math.ceil(totalCount / pageSize),
+    totalRevenue: Number(result?.total_revenue || 0),
+    totalKwh: Number(result?.total_kwh || 0),
+    pendingCount: Number(result?.pending_count || 0),
+  };
+}
+
+/**
+ * Get a single shift by ID with related data.
+ */
+export async function getShiftById(id: string): Promise<Shift | null> {
+  const { data, error } = await supabase
+    .from('shifts')
+    .select('*, stations(name), operators(name, card_number)')
+    .eq('id', id)
+    .single();
+
+  if (error) {
+    if (error.code === 'PGRST116') return null;
+    throw error;
+  }
+  return data as Shift;
+}
+
+/**
+ * Update shift totals (called after billing calculation).
+ */
+export async function updateShiftTotals(
+  shiftId: string,
+  totalKwh: number,
+  totalAmountJod: number
+): Promise<void> {
+  const { error } = await supabase
+    .from('shifts')
+    .update({
+      total_kwh: totalKwh,
+      total_amount_jod: totalAmountJod,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', shiftId);
+
+  if (error) throw error;
+}
+
+/**
+ * Update handover status with optional bank deposit info.
+ */
+export async function updateHandoverStatus(
+  shiftId: string,
+  status: 'pending' | 'printed' | 'deposited' | 'handed_over',
+  depositInfo?: {
+    bank_deposit_slip?: string;
+    bank_deposit_date?: string;
+    bank_deposit_reference?: string;
+  }
+): Promise<void> {
+  const updateData: Record<string, unknown> = {
+    handover_status: status,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (depositInfo) {
+    if (depositInfo.bank_deposit_slip !== undefined) {
+      updateData.bank_deposit_slip = depositInfo.bank_deposit_slip;
+    }
+    if (depositInfo.bank_deposit_date !== undefined) {
+      updateData.bank_deposit_date = depositInfo.bank_deposit_date;
+    }
+    if (depositInfo.bank_deposit_reference !== undefined) {
+      updateData.bank_deposit_reference = depositInfo.bank_deposit_reference;
+    }
+  }
+
+  const { error } = await supabase
+    .from('shifts')
+    .update(updateData)
+    .eq('id', shiftId);
+
+  if (error) throw error;
+}
+
+/**
+ * Upload bank deposit slip to storage.
+ */
+export async function uploadDepositSlip(shiftId: string, file: File): Promise<string> {
+  const ext = file.name.split('.').pop() || 'pdf';
+  const path = `deposit-slips/${shiftId}/slip.${ext}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from('company-assets')
+    .upload(path, file, { upsert: true });
+
+  if (uploadError) throw uploadError;
+
+  const { data } = supabase.storage
+    .from('company-assets')
+    .getPublicUrl(path);
+
+  return data.publicUrl;
+}
+
+/**
+ * Link sessions to a shift by updating their shift_id and operator_id.
+ */
+export async function linkSessionsToShift(
+  batchId: string,
+  shiftId: string,
+  operatorId: string
+): Promise<number> {
+  const { data, error } = await supabase
+    .from('charging_sessions')
+    .update({
+      shift_id: shiftId,
+      operator_id: operatorId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('import_batch_id', batchId)
+    .select('id');
+
+  if (error) throw error;
+  return data?.length || 0;
+}
+
+/**
+ * Delete a shift (does not delete sessions — only unlinks).
+ */
+/**
+ * Permanently, irreversibly deletes a shift and every descendant row across
+ * the whole schema (its sessions, billing, breakdown, payment allocations,
+ * cash handovers + adjustments/events, historical correction queue/archive,
+ * payment classification queue, engine metadata repair log).
+ *
+ * System Administrator only. Bypasses locked-handover protection. Writes no
+ * audit_log entry — this is a deliberate, explicit exception to the
+ * immutable-audit-trail design used everywhere else in this app. There is no
+ * undo. See admin_force_delete_shift in the database.
+ */
+export async function deleteShift(shiftId: string): Promise<{
+  sessions_deleted: number;
+  billing_deleted: number;
+  handovers_deleted: number;
+}> {
+  const { data, error } = await supabase.rpc('admin_force_delete_shift', {
+    p_shift_id: shiftId,
+  });
+  if (error) throw error;
+  const result = data as {
+    sessions_deleted?: number;
+    billing_deleted?: number;
+    handovers_deleted?: number;
+  };
+  return {
+    sessions_deleted: result?.sessions_deleted ?? 0,
+    billing_deleted: result?.billing_deleted ?? 0,
+    handovers_deleted: result?.handovers_deleted ?? 0,
+  };
+}
+
+/**
+ * Get shift summary stats for dashboard.
+ */
+export async function getShiftSummary(stationId?: string, dateFrom?: string, dateTo?: string): Promise<{
+  totalShifts: number;
+  totalKwh: number;
+  totalRevenue: number;
+  pendingHandovers: number;
+}> {
+  let query = supabase
+    .from('shifts')
+    .select('total_kwh, total_amount_jod, handover_status');
+
+  if (stationId) query = query.eq('station_id', stationId);
+  if (dateFrom) query = query.gte('shift_date', dateFrom);
+  if (dateTo) query = query.lte('shift_date', dateTo);
+
+  const { data, error } = await query;
+  if (error) throw error;
+
+  const shifts = data || [];
+  return {
+    totalShifts: shifts.length,
+    totalKwh: shifts.reduce((sum, s) => sum + (Number(s.total_kwh) || 0), 0),
+    totalRevenue: shifts.reduce((sum, s) => sum + (Number(s.total_amount_jod) || 0), 0),
+    pendingHandovers: shifts.filter(s => s.handover_status === 'pending').length,
+  };
+}
+
+/**
+ * Recalculate totals for a single shift from linked sessions & billing data.
+ */
+export async function recalculateShiftTotals(shiftId: string): Promise<{
+  session_count: number;
+  total_kwh: number;
+  total_amount_jod: number;
+}> {
+  const { data, error } = await (supabase.rpc as any)('recalculate_shift_totals', {
+    p_shift_id: shiftId,
+  });
+
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Recalculate totals for ALL shifts at once.
+ */
+export async function recalculateAllShiftTotals(): Promise<{
+  shifts_updated: number;
+  total_kwh: number;
+  total_amount_jod: number;
+}> {
+  const { data, error } = await (supabase.rpc as any)('recalculate_all_shift_totals');
+
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Get sessions for a specific shift with billing data.
+ */
+export async function getShiftSessionsWithBilling(shiftId: string): Promise<any[]> {
+  const { data, error } = await supabase
+    .from('charging_sessions')
+    .select(`
+      id, transaction_id, card_number, start_ts, end_ts,
+      energy_consumed_kwh, charge_id,
+      billing_calculations (
+        id, total_amount, subtotal, fees
+      )
+    `)
+    .eq('shift_id', shiftId)
+    .order('start_ts', { ascending: true });
+
+  if (error) throw error;
+  return normalizeSessionsBillingEmbed(data);
+}
+

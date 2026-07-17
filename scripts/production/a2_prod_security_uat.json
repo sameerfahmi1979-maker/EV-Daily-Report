@@ -1,0 +1,36 @@
+{
+  "when": "2026-07-16T19:50:57.064Z",
+  "results": [
+    {
+      "name": "Anon cannot read charging_sessions",
+      "pass": true,
+      "detail": "rows=0"
+    },
+    {
+      "name": "Anon cannot read billing_calculations",
+      "pass": true,
+      "detail": "rows=0"
+    },
+    {
+      "name": "Anon cannot read shifts",
+      "pass": true,
+      "detail": "rows=0"
+    },
+    {
+      "name": "Anon cannot read billing_calculations_duplicate_archive",
+      "pass": true,
+      "detail": "rows=0"
+    },
+    {
+      "name": "Anon cannot read stations",
+      "pass": true,
+      "detail": "rows=0"
+    },
+    {
+      "name": "Anon cannot execute replace_session_billing",
+      "pass": true,
+      "detail": "permission denied for function replace_session_billing"
+    }
+  ],
+  "failed": 0
+}
