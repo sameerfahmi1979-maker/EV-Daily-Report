@@ -43,13 +43,15 @@ export async function handleStopTransaction(
       })
       .eq('id', session.id);
 
-    // Return connector to Available
+    // Return connector to Available and clear live power reading
     await supabase
       .from('ocpp_connectors')
       .update({
         status: 'Available',
+        power_kw: 0,
         current_session_id: null,
         last_status_update: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       })
       .eq('id', session.connector_id);
 
