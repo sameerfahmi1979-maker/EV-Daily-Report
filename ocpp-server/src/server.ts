@@ -22,20 +22,29 @@ const httpServer = http.createServer((req, res) => {
   }
 });
 
-// WebSocket server mounted at /ocpp
+// WebSocket server — no path filter here; we match manually in the connection handler.
 // Chargers connect to: wss://<domain>/ocpp/<chargePointId>
-const wss = new WebSocketServer({ server: httpServer, path: '/ocpp' });
+// We also negotiate the OCPP 1.6J subprotocol so chargers don't abort the handshake.
+const wss = new WebSocketServer({
+  server: httpServer,
+  handleProtocols: (protocols: Set<string>) => {
+    if (protocols.has('ocpp1.6')) return 'ocpp1.6';
+    if (protocols.has('ocpp1.6j')) return 'ocpp1.6j';
+    // Accept even if no subprotocol (some chargers omit it)
+    return protocols.values().next().value ?? false;
+  },
+});
 
 wss.on('connection', (ws, req) => {
-  // URL format: /ocpp/CHARGE_POINT_ID
-  const url = req.url || '';
-  const parts = url.replace(/^\/+/, '').split('/');
-  // parts[0] = 'ocpp', parts[1] = chargePointId
-  const chargePointId = parts[1];
+  // Expected URL: /ocpp/<chargePointId>
+  // Strip query string first, then split
+  const rawUrl = (req.url || '').split('?')[0];
+  const match = rawUrl.match(/^\/ocpp\/(.+)$/);
+  const chargePointId = match ? match[1] : null;
 
   if (!chargePointId) {
-    console.warn('Connection rejected: no chargePointId in URL', url);
-    ws.close(4001, 'chargePointId required in URL path');
+    console.warn('Connection rejected — expected /ocpp/<chargePointId>, got:', rawUrl);
+    ws.close(4001, 'chargePointId required in URL path: /ocpp/<chargePointId>');
     return;
   }
 
