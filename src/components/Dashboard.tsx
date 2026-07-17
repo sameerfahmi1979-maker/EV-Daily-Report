@@ -29,6 +29,17 @@ import CDRExport from './CDRExport';
 import OperatorRoster from './OperatorRoster';
 import RevenueForecast from './RevenueForecast';
 import ReportingV2Dashboard from './ReportingV2Dashboard';
+// CPMS views
+import ChargerMonitor from './ChargerMonitor';
+import ChargePointList from './ChargePointList';
+import ConnectorList from './ConnectorList';
+import RFIDManagement from './RFIDManagement';
+import NetworkTopology from './NetworkTopology';
+import OCPPMessages from './OCPPMessages';
+import AlarmManagement from './AlarmManagement';
+import FirmwareManagement from './FirmwareManagement';
+import ChargingProfiles from './ChargingProfiles';
+import OCPPConfiguration from './OCPPConfiguration';
 import { Database as DatabaseType } from '../lib/database.types';
 import { Sidebar } from './Sidebar';
 import { useTheme } from '../contexts/ThemeContext';
@@ -70,7 +81,18 @@ type View =
   | 'cdr'
   | 'roster'
   | 'forecast'
-  | 'reporting-v2';
+  | 'reporting-v2'
+  // CPMS
+  | 'charger-monitor'
+  | 'charge-points'
+  | 'connectors'
+  | 'rfid-cards'
+  | 'network-map'
+  | 'ocpp-messages'
+  | 'alarms'
+  | 'firmware'
+  | 'charging-profiles'
+  | 'ocpp-config';
 
 export function Dashboard() {
   const { user, signOut } = useAuth();
@@ -161,16 +183,16 @@ export function Dashboard() {
     setRefreshKey(prev => prev + 1);
   };
 
-  const handleNavigate = (view: View) => {
+  const handleNavigate = (view: string) => {
     if (view !== 'billing') {
       setBillingInitialFilter(undefined);
     }
-    setCurrentView(view);
+    setCurrentView(view as View);
   };
 
   const handleNavigateWithPending = () => {
     setBillingInitialFilter('pending');
-    setCurrentView('billing');
+    setCurrentView('billing' as View);
   };
 
   const { theme, toggleTheme } = useTheme();
@@ -297,6 +319,18 @@ export function Dashboard() {
         {currentView === 'forecast' && <RevenueForecast />}
 
         {currentView === 'reporting-v2' && <ReportingV2Dashboard />}
+
+        {/* CPMS views */}
+        {currentView === 'charger-monitor' && <ChargerMonitor />}
+        {currentView === 'charge-points' && <ChargePointList />}
+        {currentView === 'connectors' && <ConnectorList />}
+        {currentView === 'rfid-cards' && <RFIDManagement />}
+        {currentView === 'network-map' && <NetworkTopology />}
+        {currentView === 'ocpp-messages' && <OCPPMessages />}
+        {currentView === 'alarms' && <AlarmManagement />}
+        {currentView === 'firmware' && <FirmwareManagement />}
+        {currentView === 'charging-profiles' && <ChargingProfiles />}
+        {currentView === 'ocpp-config' && <OCPPConfiguration />}
         </div>
       </main>
 
@@ -322,7 +356,7 @@ export function Dashboard() {
 
       {showRateForm && (
         <RateStructureForm
-          rateStructure={editingRate}
+          rateStructure={editingRate ?? undefined}
           onClose={() => {
             setShowRateForm(false);
             setEditingRate(null);
@@ -335,7 +369,7 @@ export function Dashboard() {
 
       {showFixedChargeForm && (
         <FixedChargesForm
-          fixedCharge={editingFixedCharge}
+          fixedCharge={editingFixedCharge ?? undefined}
           onClose={() => {
             setShowFixedChargeForm(false);
             setEditingFixedCharge(null);

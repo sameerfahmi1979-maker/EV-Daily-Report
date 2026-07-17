@@ -27,6 +27,15 @@ import {
   CalendarDays,
   TrendingUp,
   KeyRound,
+  Activity,
+  CreditCard,
+  Network,
+  MessageSquare,
+  Bell,
+  HardDrive,
+  Sliders,
+  Cpu,
+  Cable,
 } from 'lucide-react';
 import { SidebarItem } from './SidebarItem';
 import { SidebarSection } from './SidebarSection';
@@ -249,6 +258,94 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 isActive={currentView === 'reporting-v2'}
                 isCollapsed={isCollapsed}
                 onClick={() => handleNavigate('reporting-v2')}
+              />
+            </SidebarSection>
+
+            <div className="my-2 border-t border-gray-200" />
+
+            <SidebarSection title="CPMS" isCollapsed={isCollapsed}>
+              <SidebarItem
+                icon={Activity}
+                label="Charger Monitor"
+                isActive={currentView === 'charger-monitor'}
+                isCollapsed={isCollapsed}
+                onClick={() => handleNavigate('charger-monitor')}
+              />
+              <SidebarItem
+                icon={Cpu}
+                label="Charge Points"
+                isActive={currentView === 'charge-points'}
+                isCollapsed={isCollapsed}
+                onClick={() => handleNavigate('charge-points')}
+                sub
+              />
+              <SidebarItem
+                icon={Cable}
+                label="Connectors"
+                isActive={currentView === 'connectors'}
+                isCollapsed={isCollapsed}
+                onClick={() => handleNavigate('connectors')}
+                sub
+              />
+              <SidebarItem
+                icon={CreditCard}
+                label="RFID Cards"
+                isActive={currentView === 'rfid-cards'}
+                isCollapsed={isCollapsed}
+                onClick={() => handleNavigate('rfid-cards')}
+                sub
+              />
+              <SidebarItem
+                icon={Network}
+                label="Network Map"
+                isActive={currentView === 'network-map'}
+                isCollapsed={isCollapsed}
+                onClick={() => handleNavigate('network-map')}
+                sub
+              />
+            </SidebarSection>
+
+            <div className="my-2 border-t border-gray-200" />
+
+            <SidebarSection title="OCPP Ops" isCollapsed={isCollapsed}>
+              <SidebarItem
+                icon={MessageSquare}
+                label="OCPP Messages"
+                isActive={currentView === 'ocpp-messages'}
+                isCollapsed={isCollapsed}
+                onClick={() => handleNavigate('ocpp-messages')}
+              />
+              <SidebarItem
+                icon={Bell}
+                label="Alarms"
+                isActive={currentView === 'alarms'}
+                isCollapsed={isCollapsed}
+                onClick={() => handleNavigate('alarms')}
+                sub
+              />
+              <SidebarItem
+                icon={HardDrive}
+                label="Firmware"
+                isActive={currentView === 'firmware'}
+                isCollapsed={isCollapsed}
+                onClick={() => handleNavigate('firmware')}
+                sub
+              />
+              <SidebarItem
+                icon={Sliders}
+                label="Charging Profiles"
+                isActive={currentView === 'charging-profiles'}
+                isCollapsed={isCollapsed}
+                onClick={() => handleNavigate('charging-profiles')}
+                sub
+              />
+              <SidebarItem
+                icon={Settings}
+                label="OCPP Config"
+                isActive={currentView === 'ocpp-config'}
+                isCollapsed={isCollapsed}
+                onClick={() => handleNavigate('ocpp-config')}
+                sub
               />
             </SidebarSection>
 
