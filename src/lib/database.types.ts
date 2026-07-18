@@ -1223,6 +1223,7 @@ export type Database = {
           failure_reason: string | null
           file_hash: string | null
           file_size_bytes: number | null
+          file_storage_path: string | null
           filename: string
           id: string
           normalized_filename: string | null
@@ -1255,6 +1256,7 @@ export type Database = {
           failure_reason?: string | null
           file_hash?: string | null
           file_size_bytes?: number | null
+          file_storage_path?: string | null
           filename: string
           id?: string
           normalized_filename?: string | null
@@ -1287,6 +1289,7 @@ export type Database = {
           failure_reason?: string | null
           file_hash?: string | null
           file_size_bytes?: number | null
+          file_storage_path?: string | null
           filename?: string
           id?: string
           normalized_filename?: string | null

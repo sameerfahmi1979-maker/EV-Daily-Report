@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react';
-import { Upload, FileSpreadsheet, Download, AlertCircle, CheckCircle, Loader2, XCircle, ArrowRight, ArrowLeft, Clock, Table2, Rocket, Trash2, History } from 'lucide-react';
+import { Upload, FileSpreadsheet, Download, AlertCircle, CheckCircle, Loader2, XCircle, ArrowRight, ArrowLeft, Clock, Table2, Rocket, Trash2, History, FolderDown } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { normalizeRole } from '../lib/rbac';
 import {
@@ -16,6 +16,9 @@ import {
   findPostedBatchByFileHash,
   postImportBatchV2,
   previewDuplicateTransactionIds,
+  uploadImportFile,
+  saveImportFileStoragePath,
+  downloadImportFile,
 } from '../lib/importService';
 import { createShift, linkSessionsToShift } from '../lib/shiftService';
 import { operatorService } from '../lib/operatorService';
@@ -76,6 +79,7 @@ export default function FileUpload({ onImportComplete, onNavigateToBilling }: Fi
   const [loadingBatches, setLoadingBatches] = useState(false);
   const [deletingBatchId, setDeletingBatchId] = useState<string | null>(null);
   const [deletingBatch, setDeletingBatch] = useState(false);
+  const [downloadingFileId, setDownloadingFileId] = useState<string | null>(null);
 
   // Load batch history
   const loadBatches = useCallback(async () => {
@@ -271,6 +275,15 @@ export default function FileUpload({ onImportComplete, onNavigateToBilling }: Fi
         status: workflowV2 ? 'ready_to_post' : 'processing',
       });
 
+      // Upload original file to Supabase Storage so it can be downloaded later
+      try {
+        const storagePath = await uploadImportFile(file!, batchId);
+        await saveImportFileStoragePath(batchId, storagePath);
+      } catch (storageErr) {
+        // Non-fatal: log warning but continue with the import
+        console.warn('Could not store original file for download:', storageErr);
+      }
+
       const shiftStartStr = `${shiftSelection.shiftDate}T${shiftSelection.startTime}:00`;
       const startMinutes = parseInt(shiftSelection.startTime.split(':')[0]) * 60 + parseInt(shiftSelection.startTime.split(':')[1]);
       const endMinutes = parseInt(shiftSelection.endTime.split(':')[0]) * 60 + parseInt(shiftSelection.endTime.split(':')[1]);
@@ -413,6 +426,19 @@ export default function FileUpload({ onImportComplete, onNavigateToBilling }: Fi
   function handleCancelImport() {
     if (cancelTokenRef.current) {
       cancelTokenRef.current.cancelled = true;
+    }
+  }
+
+  async function handleDownloadFile(batch: any) {
+    if (!batch.file_storage_path) return;
+    setDownloadingFileId(batch.id);
+    try {
+      await downloadImportFile(batch.file_storage_path, batch.filename);
+    } catch (err) {
+      console.error('Failed to download import file:', err);
+      alert('Could not download the file. It may have been deleted or the link expired.');
+    } finally {
+      setDownloadingFileId(null);
     }
   }
 
@@ -865,8 +891,9 @@ export default function FileUpload({ onImportComplete, onNavigateToBilling }: Fi
                   <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600">Skipped</th>
                   <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600">Failed</th>
                   <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600">Status</th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600">File</th>
                   {isSystemAdmin && (
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600">Actions</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600">Delete</th>
                   )}
                 </tr>
               </thead>
@@ -898,6 +925,24 @@ export default function FileUpload({ onImportComplete, onNavigateToBilling }: Fi
                       }`}>
                         {batch.status || '—'}
                       </span>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      {batch.file_storage_path ? (
+                        <button
+                          onClick={() => handleDownloadFile(batch)}
+                          disabled={downloadingFileId === batch.id}
+                          className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50"
+                          title={`Download original file: ${batch.filename}`}
+                        >
+                          {downloadingFileId === batch.id ? (
+                            <Loader2 size={16} className="animate-spin" />
+                          ) : (
+                            <FolderDown size={16} />
+                          )}
+                        </button>
+                      ) : (
+                        <span className="text-gray-300" title="Original file not stored">—</span>
+                      )}
                     </td>
                     {isSystemAdmin && (
                       <td className="px-4 py-3 text-center">

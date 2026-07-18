@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { FileSpreadsheet, CheckCircle, AlertCircle, XCircle, Eye, Download, RefreshCw, StopCircle } from 'lucide-react';
+import { FileSpreadsheet, CheckCircle, AlertCircle, XCircle, Eye, Download, RefreshCw, StopCircle, FolderDown, Loader2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { getImportBatches, cancelImportBatch } from '../lib/importService';
+import { getImportBatches, cancelImportBatch, downloadImportFile } from '../lib/importService';
 import { Database } from '../lib/database.types';
 
 type ImportBatch = Database['public']['Tables']['import_batches']['Row'];
@@ -19,6 +19,7 @@ export default function ImportHistory({ refreshTrigger }: ImportHistoryProps) {
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [batchToCancel, setBatchToCancel] = useState<ImportBatch | null>(null);
   const [cancelling, setCancelling] = useState(false);
+  const [downloadingFileId, setDownloadingFileId] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -126,6 +127,20 @@ export default function ImportHistory({ refreshTrigger }: ImportHistoryProps) {
     window.URL.revokeObjectURL(url);
   }
 
+  async function handleDownloadFile(batch: ImportBatch) {
+    const storagePath = (batch as any).file_storage_path as string | null;
+    if (!storagePath) return;
+    setDownloadingFileId(batch.id);
+    try {
+      await downloadImportFile(storagePath, batch.filename);
+    } catch (err) {
+      console.error('Failed to download import file:', err);
+      alert('Could not download the file. It may have been deleted or the link expired.');
+    } finally {
+      setDownloadingFileId(null);
+    }
+  }
+
   function handleCancelClick(batch: ImportBatch) {
     setBatchToCancel(batch);
     setShowCancelModal(true);
@@ -205,6 +220,7 @@ export default function ImportHistory({ refreshTrigger }: ImportHistoryProps) {
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-700">Skipped</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-700">Failed</th>
                 <th className="px-6 py-3 text-left text-sm font-medium text-gray-700">Status</th>
+                <th className="px-6 py-3 text-center text-sm font-medium text-gray-700">Download</th>
                 <th className="px-6 py-3 text-right text-sm font-medium text-gray-700">Actions</th>
               </tr>
             </thead>
@@ -224,6 +240,25 @@ export default function ImportHistory({ refreshTrigger }: ImportHistoryProps) {
                   </td>
                   <td className="px-6 py-4 text-sm text-red-700 font-medium">{batch.records_failed}</td>
                   <td className="px-6 py-4">{getStatusBadge(batch.status)}</td>
+                  <td className="px-6 py-4 text-center">
+                    {(batch as any).file_storage_path ? (
+                      <button
+                        onClick={() => handleDownloadFile(batch)}
+                        disabled={downloadingFileId === batch.id}
+                        className="inline-flex items-center space-x-1 px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors disabled:opacity-50"
+                        title={`Download original file: ${batch.filename}`}
+                      >
+                        {downloadingFileId === batch.id ? (
+                          <Loader2 size={13} className="animate-spin" />
+                        ) : (
+                          <FolderDown size={13} />
+                        )}
+                        <span>{downloadingFileId === batch.id ? 'Preparing…' : 'Download'}</span>
+                      </button>
+                    ) : (
+                      <span className="text-xs text-gray-400">Not stored</span>
+                    )}
+                  </td>
                   <td className="px-6 py-4 text-right">
                     <div className="flex items-center justify-end space-x-2">
                       {batch.status === 'processing' && (

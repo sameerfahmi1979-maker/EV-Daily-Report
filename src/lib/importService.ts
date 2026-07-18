@@ -1014,6 +1014,74 @@ export async function findOperatorByNormalizedCard(
   return data;
 }
 
+// =============================================
+// FILE STORAGE: Upload & Download original import files
+// =============================================
+
+const IMPORT_FILES_BUCKET = 'import-files';
+
+/**
+ * Uploads the original Excel/CSV file to Supabase Storage under import-files/{batchId}/{filename}.
+ * Returns the storage path string on success.
+ */
+export async function uploadImportFile(file: File, batchId: string): Promise<string> {
+  const safeFilename = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const storagePath = `${batchId}/${safeFilename}`;
+
+  const { error } = await supabase.storage
+    .from(IMPORT_FILES_BUCKET)
+    .upload(storagePath, file, { upsert: true });
+
+  if (error) throw new Error(`File storage upload failed: ${error.message}`);
+  return storagePath;
+}
+
+/**
+ * Saves the storage path back to the import_batches row.
+ */
+export async function saveImportFileStoragePath(batchId: string, storagePath: string): Promise<void> {
+  const { error } = await supabase
+    .from('import_batches')
+    .update({ file_storage_path: storagePath })
+    .eq('id', batchId);
+
+  if (error) throw new Error(`Failed to save file storage path: ${error.message}`);
+}
+
+/**
+ * Creates a short-lived signed URL (1 hour) for the stored import file and triggers a browser download.
+ */
+export async function downloadImportFile(storagePath: string, filename: string): Promise<void> {
+  const { data, error } = await supabase.storage
+    .from(IMPORT_FILES_BUCKET)
+    .createSignedUrl(storagePath, 3600, { download: filename });
+
+  if (error || !data?.signedUrl) {
+    throw new Error(`Could not generate download link: ${error?.message ?? 'unknown error'}`);
+  }
+
+  const link = document.createElement('a');
+  link.href = data.signedUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+/**
+ * Deletes the stored import file from Supabase Storage.
+ * Non-fatal — logs a warning if the file doesn't exist.
+ */
+export async function deleteImportFile(storagePath: string): Promise<void> {
+  const { error } = await supabase.storage
+    .from(IMPORT_FILES_BUCKET)
+    .remove([storagePath]);
+
+  if (error) {
+    console.warn(`Could not delete import file from storage: ${error.message}`);
+  }
+}
+
 export async function findPostedBatchByFileHash(fileHash: string): Promise<{ id: string; filename: string; status: string | null } | null> {
   const { data } = await supabase
     .from('import_batches')
