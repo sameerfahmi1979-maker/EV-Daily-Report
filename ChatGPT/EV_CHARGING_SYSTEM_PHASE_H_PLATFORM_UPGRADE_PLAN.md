@@ -1,59 +1,113 @@
-# EV Charging System — Phase H: Full Independent Platform Plan
-**Vision:** Build a complete, independent EV Charging Management Platform (CPMS)  
-**Scope:** Multi-protocol OCPP, auto-discovery, automated financials, full station management  
-**Based on:** Powercore CPMS audit + cnchargepoint firmware deep analysis  
+# ChargeOS — Independent SaaS EV Charging Management Platform
+## Phase 0: Platform Blueprint & Architecture Plan
+
+**Product Name:** ChargeOS (working title — white-labelable)  
+**Vision:** A fully independent, multi-tenant, white-label SaaS EV Charging Management Platform  
+**Scope:** New standalone app — entirely new database, new codebase, new infrastructure  
+**Based on:** Powercore CPMS audit + cnchargepoint firmware deep analysis + current system lessons  
 **Last Updated:** 2026-07-18  
-**Status:** PLANNING — Ready for implementation
+**Status:** PHASE 0 — Blueprint Complete, Ready for Implementation
 
 ---
 
 ## Executive Summary
 
-This plan defines an **entirely independent** EV Charging Platform — not a copy of any existing system. It is built from first principles using what we already have (Supabase, OCPP server, billing engine) and adds every capability needed to run a real commercial EV charging operation without any external dependency.
+**ChargeOS** is a new, standalone SaaS product — not an upgrade of the existing app. It is built from scratch with a fresh database (integer primary keys, not UUIDs), a multi-tenant architecture, white-label capability, and native mobile apps for operators, customers, and managers.
+
+The platform can be:
+- **Sold as a SaaS** to any EV charging station operator via monthly subscription
+- **White-labeled** so each customer runs it under their own brand, domain, and colors
+- **Self-hosted** for enterprise operators who want full control
+- **Mobile-first** with dedicated React Native apps for every user role
+
+This plan is **Phase 0** of ChargeOS — the complete technical blueprint before a single line of code is written.
 
 ### Platform Goals
 
 | Goal | Description |
 |---|---|
-| **OCPP-Native** | All session data captured automatically via OCPP 1.6, 1.6J, and 2.0. No manual Excel import as primary path. |
-| **Auto-Discovery** | Chargers connecting to the OCPP server are automatically identified, fingerprinted (type, connectors, firmware), and registered without manual entry. |
-| **Station Hierarchy** | Every asset is organized as Organization → Station → Charger → Connector. Reports, permissions, and billing all follow this hierarchy. |
-| **Automated Financials** | Every session generates a billing record automatically. Shifts are tracked per operator. Cash handover is generated and acknowledged digitally. |
-| **Multi-Protocol** | Single OCPP server handles OCPP 1.6 (SOAP), 1.6J (JSON/WS), and 2.0.1 (JSON/WS). Protocol version is detected per charger. |
-| **Operator-Aware** | Multi-tenant. Multiple operators can share the platform. Each sees only their own data. |
-| **Full History** | Every session, every alarm, every config change, every heartbeat is stored and retrievable forever. |
+| **New App, New DB** | Entirely new codebase. Fresh Supabase project. Integer primary keys (BIGSERIAL) throughout. No legacy data structures. |
+| **SaaS Multi-Tenant** | One platform instance serves unlimited customers (tenants). Complete data isolation per tenant via RLS. Monthly subscription billing. |
+| **White-Label Ready** | Each tenant gets their own logo, brand colors, app name, custom domain, and OCPP server namespace. The app looks like it belongs to them. |
+| **Mobile-First** | Three dedicated React Native (Expo) mobile apps: Operator, Customer, Manager. Web app is fully mobile-responsive. |
+| **OCPP-Native** | All session data captured automatically via OCPP 1.6, 1.6J, and 2.0.1. Protocol detected at handshake. |
+| **Auto-Discovery** | Chargers connecting to OCPP server auto-fingerprinted, auto-registered, connectors auto-created. Zero manual entry. |
+| **Station Hierarchy** | Tenant → Organization → Station → Charger → Connector. All reports, permissions, billing follow this hierarchy. |
+| **Automated Financials** | Every session bills automatically. Shifts tracked per officer. Cash handover PDF generated and signed digitally. |
+| **Region-Aware** | Auto-detect region, currency, decimal places, timezone, language (Arabic/English). Per-tenant override. |
+| **Real-Time Everything** | Zero-polling dashboard. All status changes delivered via Supabase Realtime WebSocket. |
+| **Full History** | Every session, meter value, alarm, config change, command, heartbeat stored and queryable forever. |
 
 ---
 
 ## Platform Architecture
 
+### High-Level System Overview
+
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         EV CHARGING PLATFORM                            │
-│                                                                         │
-│  ┌──────────────┐    ┌──────────────────────────────────────────────┐  │
-│  │   OCPP       │    │              SUPABASE (Postgres)              │  │
-│  │   SERVER     │───▶│  Sessions · Alarms · Config · Financial      │  │
-│  │  (Railway)   │    │  RFID · Firmware · Diagnostics · Audit       │  │
-│  │              │◀───│  Realtime WebSocket subscriptions             │  │
-│  │ OCPP 1.6 ✓  │    └──────────────────────────────────────────────┘  │
-│  │ OCPP 1.6J ✓ │                          │                            │
-│  │ OCPP 2.0 ▶  │    ┌──────────────────────────────────────────────┐  │
-│  └──────────────┘    │              REACT FRONTEND                   │  │
-│         │            │  Dashboard · Monitor · Stations · Finance    │  │
-│         │            │  Shifts · Handover · Alarms · RFID · OCPP   │  │
-│  ┌──────▼───────┐    └──────────────────────────────────────────────┘  │
-│  │   CHARGERS   │                          │                            │
-│  │              │    ┌──────────────────────────────────────────────┐  │
-│  │ Station A    │    │          SUPABASE EDGE FUNCTIONS              │  │
-│  │  └ Charger 1 │    │  shift-close · billing-calc · handover-pdf  │  │
-│  │    ├ Gun 1   │    │  alarm-notify · firmware-deploy · auto-settle│  │
-│  │    └ Gun 2   │    └──────────────────────────────────────────────┘  │
-│  │ Station B    │                                                       │
-│  │  └ Charger 1 │                                                       │
-│  │  └ Charger 2 │                                                       │
-└─────────────────────────────────────────────────────────────────────────┘
+╔══════════════════════════════════════════════════════════════════════════════════╗
+║                    ChargeOS — SaaS EV Charging Platform                        ║
+╠══════════════════════════════════════════════════════════════════════════════════╣
+║                                                                                  ║
+║  ┌─────────────────────────────────────────────────────────────────────────┐   ║
+║  │                     MULTI-TENANT LAYER                                   │   ║
+║  │  Tenant A (AcmeEV)  │  Tenant B (GreenCharge)  │  Tenant C (YourBrand) │   ║
+║  │  tenant_id = 1       │  tenant_id = 2            │  tenant_id = 3        │   ║
+║  │  domain: acmeev.com  │  domain: greencharge.io   │  white-label domain   │   ║
+║  └─────────────────────────────────────────────────────────────────────────┘   ║
+║                                    │                                             ║
+║              ┌─────────────────────┼──────────────────────┐                    ║
+║              │                     │                        │                    ║
+║  ┌───────────▼──────┐  ┌───────────▼──────────┐  ┌────────▼─────────────────┐ ║
+║  │   OCPP SERVER    │  │  SUPABASE (Postgres)  │  │    EDGE FUNCTIONS        │ ║
+║  │  (Railway/VPS)   │  │                       │  │  shift-close             │ ║
+║  │                  │  │  tenant_id on ALL     │  │  billing-calc            │ ║
+║  │  ocpp1.6 ✓       │──▶  tables (RLS isolates)│  │  handover-pdf            │ ║
+║  │  ocpp1.6J ✓      │  │                       │  │  alarm-notify            │ ║
+║  │  ocpp2.0.1 ▶     │  │  Sessions · Billing   │  │  firmware-deploy         │ ║
+║  │                  │◀──  Realtime WebSocket    │  │  subscription-check      │ ║
+║  └──────────────────┘  └───────────────────────┘  └──────────────────────────┘ ║
+║                                    │                                             ║
+║         ┌──────────────────────────┼───────────────────────────┐               ║
+║         │                          │                            │               ║
+║  ┌──────▼────────┐  ┌──────────────▼──────────┐  ┌────────────▼─────────────┐ ║
+║  │  WEB APP      │  │  OPERATOR MOBILE APP     │  │  CUSTOMER MOBILE APP     │ ║
+║  │  React + Vite │  │  React Native (Expo)     │  │  React Native (Expo)     │ ║
+║  │  Tailwind CSS │  │                          │  │                          │ ║
+║  │  Mobile-Ready │  │  - View shift status     │  │  - Find stations (map)   │ ║
+║  │  White-label  │  │  - Start/stop sessions   │  │  - Scan QR to charge     │ ║
+║  │  branding     │  │  - Submit cash handover  │  │  - Pay & track session   │ ║
+║  │               │  │  - View alarms           │  │  - View history          │ ║
+║  └───────────────┘  └──────────────────────────┘  └──────────────────────────┘ ║
+║                                                                                  ║
+║  ┌───────────────────────────────────────────────────────────────────────────┐  ║
+║  │  MANAGER MOBILE APP (React Native / Expo)                                 │  ║
+║  │  Live dashboard · Reports · Approve handovers · Manage chargers · Alerts  │  ║
+║  └───────────────────────────────────────────────────────────────────────────┘  ║
+║                                                                                  ║
+║  ┌───────────────────────────────────────────────────────────────────────────┐  ║
+║  │  PHYSICAL CHARGERS (per tenant, auto-discovered)                          │  ║
+║  │  Station A → Charger 1 (Gun 1, Gun 2)   Station B → Charger 1, Charger 2 │  ║
+║  └───────────────────────────────────────────────────────────────────────────┘  ║
+╚══════════════════════════════════════════════════════════════════════════════════╝
 ```
+
+### Technology Stack Decision
+
+| Layer | Technology | Reason |
+|---|---|---|
+| **Database** | Supabase (Postgres) — new project | Fresh schema, integer IDs, clean RLS |
+| **Primary Keys** | `BIGSERIAL` (integer auto-increment) | Human-readable IDs (1, 2, 3…), faster joins, smaller indexes |
+| **Backend API** | Supabase PostgREST + Edge Functions | Zero backend code for CRUD, serverless for complex logic |
+| **OCPP Server** | Node.js + TypeScript (Railway or VPS) | Existing, battle-tested, extend for multi-tenant |
+| **Web Frontend** | React + Vite + Tailwind CSS | Existing expertise, fast build, white-label theming |
+| **Mobile Apps** | React Native + Expo (Managed Workflow) | One codebase → iOS + Android, shared types with web |
+| **Auth** | Supabase Auth | JWT with tenant_id claim, RLS integration |
+| **Push Notifications** | Expo Push Notifications | Unified iOS/Android push |
+| **Maps** | React Native Maps + Google Maps API | Station finder, charger locations |
+| **Payments** | Stripe (or Tap Payments for MENA) | Customer app payments |
+| **PDF** | jsPDF + arabicReshaper.ts | Existing, proven Arabic support |
+| **Subscription Billing** | Stripe Billing | Per-tenant monthly subscriptions |
 
 ---
 
@@ -1663,19 +1717,117 @@ When a brand new charger connects for the first time:
 
 ---
 
+### Phase H14 — SaaS Tenancy & White-Label (Week 10–11)
+**Priority: CRITICAL for commercial launch**
+
+#### H14.1 — Multi-Tenant Foundation
+- `tenant_id BIGINT` on all tables, RLS `tenant_isolation` policy on every table
+- Tenant slug → OCPP URL namespace (`/acme-ev/charger-id`)
+- Custom OCPP domain support (CNAME to Railway server)
+- JWT custom claim injection: `tenant_id` from `user_profiles`
+
+#### H14.2 — Subscription Plans & Billing
+- `subscription_plans` table seeded (Starter $49/mo, Pro $149/mo, Enterprise custom)
+- Stripe integration: create customer + subscription on tenant creation
+- Stripe webhook: `invoice.payment_succeeded` → activate, `invoice.payment_failed` → grace period
+- Feature gate: `requireFeature()` checks plan flags before premium actions
+- Charger limit trigger: `check_charger_limit()` enforces `max_chargers` from plan
+- Trial: 14-day trial for new tenants, countdown banner in UI
+
+#### H14.3 — White-Label Customization
+- `tenant_branding` table (logo, colors, domain, PDF header, app name)
+- Branding editor UI: live preview panel
+- CSS custom properties applied at runtime from DB
+- Custom web domain: CNAME setup instructions + SSL auto-provisioning (Cloudflare)
+- PDF reports use tenant logo and colors
+- `app_name` shown in browser title, emails, app store listings
+
+#### H14.4 — Super-Admin Panel
+- `/super-admin` route, accessible only to `super_admin` role
+- Tenant list: plan, status, charger count, revenue, last active
+- MRR dashboard: total monthly recurring revenue across all tenants
+- Manual plan override, tenant suspension
+- Platform health: OCPP connections, DB query time, Edge Function errors
+
+---
+
+### Phase H15 — Mobile Apps (Week 12–15)
+**Priority: HIGH**
+
+#### H15.1 — Monorepo Setup
+- Turborepo workspace: `apps/web`, `apps/operator`, `apps/customer`, `apps/manager`
+- Shared packages: `packages/types`, `packages/api-hooks`, `packages/ui`, `packages/utils`
+- CI: build all apps on PR, type-check shared packages first
+
+#### H15.2 — Operator App (Expo)
+- Shift home screen: current shift, live revenue, session count
+- Charger monitor: live status grid from Supabase Realtime
+- Remote start/stop from phone
+- Cash handover submission with denomination keyboard
+- Alarm acknowledgment with photo attachment
+- Offline mode: MMKV cache, sync on reconnect
+- Biometric auth (FaceID / Fingerprint)
+- Push notifications: alarm alerts, session events
+
+#### H15.3 — Customer App (Expo)
+- Station map (React Native Maps + Google Maps)
+- QR code scanner to start session
+- Live charging tracker: kW, kWh, cost (Realtime)
+- Stripe / Tap Payments integration
+- Session history + downloadable receipts
+- RFID card registration
+- Push: session started, session complete with receipt
+
+#### H15.4 — Manager App (Expo)
+- Live dashboard KPI cards (Realtime)
+- Charger status grid
+- Handover approval queue (view PDF, approve/reject)
+- Report viewer with export
+- Alarm response
+- Staff management (approve registrations, assign shifts)
+- Push: critical alarms, pending approvals
+
+#### H15.5 — App Store Submission
+- TestFlight (iOS) + Play Store Internal Testing
+- App icons, screenshots, descriptions
+- White-label build pipeline for enterprise tenants (custom bundle ID, icon, name)
+
+#### H15.6 — PWA (Web Mobile)
+- Service worker for offline dashboard
+- `manifest.json` with tenant branding
+- "Add to Home Screen" prompt
+- All web pages pass mobile usability test (min 44px tap targets, responsive tables)
+
+---
+
 ## Part 11: Technology Stack Summary
 
 | Layer | Technology | Reason |
 |---|---|---|
-| Frontend | React 18 + TypeScript | Existing |
-| UI Components | Shadcn/ui + Tailwind | Existing, modern |
-| Charts | Recharts | Already in React ecosystem |
-| Tables | TanStack Table | Already used, powerful |
-| Real-time | Supabase Realtime | Already connected |
-| Database | Supabase (Postgres) | Already in use |
-| Auth | Supabase Auth | Already in use |
-| File Storage | Supabase Storage | Already in use, firmware + diagnostics + photos |
-| Edge Functions | Supabase Edge Functions (Deno) | Already used for admin functions |
+| **Web Frontend** | React 18 + Vite + TypeScript | Fast dev, existing expertise |
+| **UI Components** | Shadcn/ui + Tailwind CSS | Existing, modern, themeable via CSS vars |
+| **Charts** | Recharts | React ecosystem, existing |
+| **Tables** | TanStack Table | Powerful, existing |
+| **Forms** | React Hook Form + Zod | Validation, existing |
+| **Mobile Apps** | React Native + Expo (Managed) | One codebase → iOS + Android |
+| **Mobile UI** | NativeWind (Tailwind for RN) | Same design system as web |
+| **Mobile Maps** | React Native Maps | Station finder |
+| **Monorepo** | Turborepo | Share code across web + 3 mobile apps |
+| **Real-time** | Supabase Realtime | Already connected, zero polling |
+| **Database** | Supabase (Postgres) — new project | Clean schema, integer IDs, RLS |
+| **Primary Keys** | BIGSERIAL (integer) | Readable, fast, small indexes |
+| **Auth** | Supabase Auth | JWT, RLS integration |
+| **File Storage** | Supabase Storage | PDFs, photos, firmware, logos |
+| **Edge Functions** | Supabase Edge Functions (Deno) | Shift close, billing, PDF generation |
+| **OCPP Server** | Node.js + TypeScript + ws | Multi-tenant, Railway deployment |
+| **Push Notifications** | Expo Push Notifications | Unified iOS + Android push |
+| **Subscription Billing** | Stripe + Stripe Billing | Per-tenant monthly subscriptions |
+| **Customer Payments** | Stripe or Tap Payments (MENA) | Customer app in-app payments |
+| **PDF Generation** | jsPDF + arabicReshaper.ts | Arabic support, branded reports |
+| **CI/CD** | GitHub Actions | Build, type-check, lint on PR |
+| **Deployment (OCPP)** | Railway | WebSocket support, auto-deploy |
+| **Deployment (Web)** | Vercel or Cloudflare Pages | Auto-deploy, edge CDN |
+| **Custom Domains** | Cloudflare (CNAME + SSL) | White-label web + OCPP domains |
 | OCPP Server | Node.js + TypeScript + ws library | Already running on Railway |
 | PDF Generation | jsPDF + arabicReshaper | Already built, supports Arabic |
 | CSV Export | PapaParse | Lightweight |
@@ -2282,23 +2434,962 @@ Step 6: Done
 
 ---
 
+## Part 17: SaaS Multi-Tenancy Architecture
+
+### 17.1 Core Principle — `tenant_id` on Everything
+
+Every table in the database has a `tenant_id BIGINT NOT NULL` column. Supabase RLS policies ensure a logged-in user can only ever see rows that belong to their tenant. There is no application-level filtering — the database enforces it at the row level.
+
+```sql
+-- Every table follows this pattern:
+CREATE TABLE stations (
+  id          BIGSERIAL PRIMARY KEY,
+  tenant_id   BIGINT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  name        TEXT NOT NULL,
+  -- ... other columns
+);
+
+-- RLS policy (identical pattern on every table):
+ALTER TABLE stations ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "tenant_isolation" ON stations
+  USING (tenant_id = (SELECT tenant_id FROM user_profiles WHERE id = auth.uid()));
+```
+
+### 17.2 Tenant Table
+
+```sql
+CREATE TABLE tenants (
+  id                BIGSERIAL PRIMARY KEY,
+  slug              TEXT UNIQUE NOT NULL,         -- 'acme-ev', used in URLs and OCPP namespace
+  name              TEXT NOT NULL,                -- 'AcmeEV Charging'
+  plan_id           BIGINT REFERENCES subscription_plans(id),
+  subscription_status TEXT DEFAULT 'trial',      -- 'trial' | 'active' | 'past_due' | 'cancelled'
+  trial_ends_at     TIMESTAMPTZ,
+  stripe_customer_id TEXT,
+  max_chargers      INTEGER DEFAULT 10,           -- from subscription plan
+  max_stations      INTEGER DEFAULT 3,
+  created_at        TIMESTAMPTZ DEFAULT now(),
+  is_active         BOOLEAN DEFAULT true
+);
+```
+
+### 17.3 OCPP Namespace Per Tenant
+
+Each tenant's chargers connect using their tenant slug as URL prefix. The OCPP server reads it to set `tenant_id` on all DB writes:
+
+```
+wss://ocpp.chargeOS.io/acme-ev/244801000001    → tenant_id = 1
+wss://ocpp.chargeOS.io/green-charge/GCEV-001   → tenant_id = 2
+wss://ocpp.chargeOS.io/your-brand/EV-CUSTOM-1  → tenant_id = 3
+```
+
+Or with custom domain (white-label):
+```
+wss://ocpp.acmeev.com/244801000001             → tenant_id = 1 (via domain lookup)
+```
+
+```typescript
+// ocpp-server/src/server.ts — tenant resolution
+const resolveTenant = async (url: string, host: string): Promise<number> => {
+  // 1. Try slug from URL path: /acme-ev/charger-id
+  const slugMatch = url.match(/^\/([a-z0-9-]+)\//);
+  if (slugMatch) {
+    const { data } = await supabase.from('tenants').select('id').eq('slug', slugMatch[1]).single();
+    if (data) return data.id;
+  }
+  // 2. Try custom OCPP domain
+  const { data } = await supabase.from('tenant_branding').select('tenant_id').eq('ocpp_domain', host).single();
+  if (data) return data.tenant_id;
+  throw new Error(`Unknown tenant for host: ${host}, url: ${url}`);
+};
+```
+
+### 17.4 Super-Admin vs Tenant Users
+
+```
+Role Hierarchy:
+  super_admin      → sees ALL tenants, manages subscriptions, platform health
+  tenant_admin     → full access within their tenant
+  station_manager  → manages assigned stations only
+  officer          → their shift and its sessions only
+  customer         → their own sessions only
+```
+
+```sql
+CREATE TABLE user_profiles (
+  id          BIGSERIAL PRIMARY KEY,
+  auth_id     UUID UNIQUE NOT NULL REFERENCES auth.users(id),
+  tenant_id   BIGINT REFERENCES tenants(id),   -- NULL for super_admin
+  role        TEXT NOT NULL,  -- 'super_admin' | 'tenant_admin' | 'station_manager' | 'officer' | 'customer'
+  full_name   TEXT,
+  phone       TEXT,
+  is_approved BOOLEAN DEFAULT false,
+  created_at  TIMESTAMPTZ DEFAULT now()
+);
+```
+
+---
+
+## Part 18: White-Label Customization
+
+### 18.1 Branding Table
+
+```sql
+CREATE TABLE tenant_branding (
+  id               BIGSERIAL PRIMARY KEY,
+  tenant_id        BIGINT UNIQUE NOT NULL REFERENCES tenants(id),
+
+  -- Identity
+  app_name         TEXT DEFAULT 'ChargeOS',         -- shown in browser tab, emails, app store
+  company_name     TEXT,
+  tagline          TEXT,
+
+  -- Visuals
+  logo_url         TEXT,                            -- stored in Supabase Storage
+  logo_dark_url    TEXT,
+  favicon_url      TEXT,
+  primary_color    TEXT DEFAULT '#3B82F6',          -- hex, used for buttons, links, etc.
+  secondary_color  TEXT DEFAULT '#10B981',
+  text_color       TEXT DEFAULT '#111827',
+  background_color TEXT DEFAULT '#FFFFFF',
+  dark_mode_primary TEXT,
+
+  -- Domains
+  web_domain       TEXT UNIQUE,                     -- 'app.acmeev.com' (CNAME to chargeOS)
+  ocpp_domain      TEXT UNIQUE,                     -- 'ocpp.acmeev.com' (CNAME to Railway)
+  api_domain       TEXT UNIQUE,                     -- 'api.acmeev.com'
+
+  -- Emails
+  support_email    TEXT,
+  from_email       TEXT,                            -- 'no-reply@acmeev.com'
+  smtp_host        TEXT,                            -- optional custom SMTP
+  smtp_port        INTEGER,
+
+  -- PDF branding
+  pdf_header_text  TEXT,
+  pdf_footer_text  TEXT,
+  pdf_logo_url     TEXT,
+
+  -- App store (mobile white-label)
+  ios_bundle_id    TEXT,                            -- 'com.acmeev.driver'
+  android_package  TEXT,                            -- 'com.acmeev.driver'
+  app_store_url    TEXT,
+  play_store_url   TEXT,
+
+  updated_at       TIMESTAMPTZ DEFAULT now()
+);
+```
+
+### 18.2 Runtime Theme Loading
+
+The web app fetches branding on startup and applies it as CSS custom properties:
+
+```typescript
+// src/lib/branding.ts
+export async function loadTenantBranding(tenantSlug: string): Promise<void> {
+  const { data } = await supabase
+    .from('tenant_branding')
+    .select('*')
+    .eq('tenant_id', getTenantIdFromSlug(tenantSlug))
+    .single();
+
+  if (!data) return; // use defaults
+
+  const root = document.documentElement;
+  root.style.setProperty('--color-primary',    data.primary_color);
+  root.style.setProperty('--color-secondary',  data.secondary_color);
+  root.style.setProperty('--color-text',       data.text_color);
+  root.style.setProperty('--color-bg',         data.background_color);
+
+  // Update title, favicon, meta
+  document.title = data.app_name || 'ChargeOS';
+  if (data.favicon_url) updateFavicon(data.favicon_url);
+}
+```
+
+### 18.3 Mobile App White-Label
+
+Mobile apps read branding from the API on launch, applying the same colors/logo:
+
+```typescript
+// React Native: app startup
+const { data: branding } = await supabase.from('tenant_branding').select('*').single();
+ThemeProvider.setTheme({
+  primary:   branding.primary_color,
+  secondary: branding.secondary_color,
+  logo:      branding.logo_url,
+  appName:   branding.app_name,
+});
+```
+
+For fully custom-branded mobile apps (different app name on App Store/Play Store), the Expo project is re-built with the tenant's `app.config.js` values (bundle ID, app name, icon). This is an enterprise-tier feature.
+
+---
+
+## Part 19: Subscription Plans & SaaS Billing
+
+### 19.1 Subscription Plans Table
+
+```sql
+CREATE TABLE subscription_plans (
+  id                BIGSERIAL PRIMARY KEY,
+  name              TEXT NOT NULL,       -- 'Starter', 'Pro', 'Enterprise'
+  price_monthly     NUMERIC(10,2),       -- USD per month
+  price_yearly      NUMERIC(10,2),       -- USD per year (discounted)
+  currency          TEXT DEFAULT 'USD',
+  stripe_price_id_monthly TEXT,
+  stripe_price_id_yearly  TEXT,
+
+  -- Feature limits
+  max_chargers      INTEGER DEFAULT 5,
+  max_stations      INTEGER DEFAULT 1,
+  max_operators     INTEGER DEFAULT 3,
+  max_rfid_cards    INTEGER DEFAULT 50,
+  history_retention_days INTEGER DEFAULT 365,
+
+  -- Feature flags
+  feature_white_label       BOOLEAN DEFAULT false,
+  feature_custom_domain     BOOLEAN DEFAULT false,
+  feature_mobile_apps       BOOLEAN DEFAULT false,
+  feature_api_access        BOOLEAN DEFAULT false,
+  feature_advanced_reports  BOOLEAN DEFAULT false,
+  feature_firmware_mgmt     BOOLEAN DEFAULT false,
+  feature_multi_currency    BOOLEAN DEFAULT false,
+  feature_ocpp_20           BOOLEAN DEFAULT false,
+  feature_customer_app      BOOLEAN DEFAULT false,
+  feature_custom_smtp       BOOLEAN DEFAULT false,
+
+  is_active         BOOLEAN DEFAULT true,
+  created_at        TIMESTAMPTZ DEFAULT now()
+);
+
+-- Seeded plans
+INSERT INTO subscription_plans (name, price_monthly, price_yearly, max_chargers, max_stations, max_operators,
+  feature_white_label, feature_custom_domain, feature_mobile_apps, feature_api_access) VALUES
+  ('Starter',    49,  490,  5,   1,  3,  false, false, false, false),
+  ('Pro',       149, 1490,  25,  5,  10, true,  true,  true,  true ),
+  ('Enterprise', 0,    0,   -1,  -1, -1, true,  true,  true,  true );
+  -- Enterprise: unlimited (-1), custom pricing, dedicated support
+```
+
+### 19.2 Plan Enforcement
+
+Feature flags checked at every relevant action:
+
+```typescript
+// src/lib/featureGate.ts
+export async function requireFeature(feature: keyof SubscriptionPlan): Promise<void> {
+  const { data: tenant } = await supabase
+    .from('tenants')
+    .select('subscription_plans(*)')
+    .single();
+
+  if (!tenant?.subscription_plans?.[feature]) {
+    throw new UpgradeRequiredError(
+      `Your ${tenant.subscription_plans.name} plan does not include ${feature}. Upgrade to access this feature.`
+    );
+  }
+}
+
+// Usage:
+await requireFeature('feature_white_label');       // before showing white-label settings
+await requireFeature('feature_firmware_mgmt');     // before firmware update UI
+await requireFeature('feature_advanced_reports');  // before export button
+```
+
+### 19.3 Usage Metering (Charger Count Gate)
+
+```sql
+-- Prevent adding chargers beyond plan limit
+CREATE OR REPLACE FUNCTION check_charger_limit()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+  current_count INTEGER;
+  max_allowed   INTEGER;
+BEGIN
+  SELECT COUNT(*) INTO current_count
+  FROM ocpp_chargers WHERE tenant_id = NEW.tenant_id;
+
+  SELECT sp.max_chargers INTO max_allowed
+  FROM tenants t JOIN subscription_plans sp ON t.plan_id = sp.id
+  WHERE t.id = NEW.tenant_id;
+
+  IF max_allowed != -1 AND current_count >= max_allowed THEN
+    RAISE EXCEPTION 'Charger limit reached (%). Upgrade your plan.', max_allowed;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER enforce_charger_limit
+  BEFORE INSERT ON ocpp_chargers
+  FOR EACH ROW EXECUTE FUNCTION check_charger_limit();
+```
+
+### 19.4 Super-Admin Dashboard
+
+A separate `/super-admin` route (not accessible to tenants) for platform management:
+
+```
+Super-Admin Panel:
+  ├── Tenants list: all tenants, plan, status, charger count, last active
+  ├── Create/edit tenant
+  ├── Override subscription plan manually
+  ├── Platform KPIs: total sessions, total energy, total revenue (across all tenants)
+  ├── Server health: OCPP connections, DB load, Edge Function errors
+  └── Subscription analytics: MRR, churn, trial conversions
+```
+
+---
+
+## Part 20: Database Design — Integer IDs
+
+### 20.1 Why Integer IDs (BIGSERIAL) Instead of UUIDs
+
+| Factor | UUID | BIGSERIAL (Integer) |
+|---|---|---|
+| **Readability** | `a3f5-bc12-...` hard to remember | `1042` easy for support tickets |
+| **Storage** | 16 bytes | 8 bytes (50% smaller) |
+| **Index size** | Large B-tree | Compact, cache-friendly |
+| **Join performance** | Slower (larger comparisons) | Faster integer joins |
+| **URL friendliness** | `/sessions/a3f5bc12-...` | `/sessions/1042` |
+| **OCPP compatibility** | Must stringify for OCPP | Native int, stringify when needed |
+| **Distributed generation** | No DB needed | Sequential, needs DB |
+| **Tenant isolation** | UUIDs hard to guess (minor security) | RLS handles isolation, IDs not secret |
+
+**Decision: Use `BIGSERIAL` for all primary keys.** Tenant isolation is enforced by RLS, not by obscure IDs.
+
+### 20.2 Core Schema with Integer IDs
+
+```sql
+-- ─── TENANTS ────────────────────────────────────────────────────────────────
+CREATE TABLE tenants (
+  id            BIGSERIAL PRIMARY KEY,
+  slug          TEXT UNIQUE NOT NULL,
+  name          TEXT NOT NULL,
+  plan_id       BIGINT REFERENCES subscription_plans(id),
+  created_at    TIMESTAMPTZ DEFAULT now()
+);
+
+-- ─── USERS ──────────────────────────────────────────────────────────────────
+CREATE TABLE user_profiles (
+  id            BIGSERIAL PRIMARY KEY,
+  auth_id       UUID UNIQUE NOT NULL,  -- Supabase Auth still uses UUID (keep as FK to auth.users)
+  tenant_id     BIGINT NOT NULL REFERENCES tenants(id),
+  role          TEXT NOT NULL,
+  full_name     TEXT,
+  phone         TEXT,
+  is_approved   BOOLEAN DEFAULT false,
+  created_at    TIMESTAMPTZ DEFAULT now()
+);
+
+-- ─── STATIONS ───────────────────────────────────────────────────────────────
+CREATE TABLE stations (
+  id            BIGSERIAL PRIMARY KEY,
+  tenant_id     BIGINT NOT NULL REFERENCES tenants(id),
+  name          TEXT NOT NULL,
+  address       TEXT,
+  city          TEXT,
+  country       TEXT DEFAULT 'AE',
+  latitude      DOUBLE PRECISION,
+  longitude     DOUBLE PRECISION,
+  timezone      TEXT DEFAULT 'Asia/Dubai',
+  is_public     BOOLEAN DEFAULT true,
+  created_at    TIMESTAMPTZ DEFAULT now()
+);
+
+-- ─── CHARGERS ───────────────────────────────────────────────────────────────
+CREATE TABLE chargers (
+  id                BIGSERIAL PRIMARY KEY,
+  tenant_id         BIGINT NOT NULL REFERENCES tenants(id),
+  station_id        BIGINT REFERENCES stations(id),
+  charge_point_id   TEXT NOT NULL,         -- from OCPP BootNotification
+  vendor            TEXT,
+  model             TEXT,
+  serial_number     TEXT,
+  firmware_version  TEXT,
+  ocpp_protocol     TEXT DEFAULT 'ocpp1.6j',
+  connection_status TEXT DEFAULT 'offline',
+  last_heartbeat    TIMESTAMPTZ,
+  auto_discovered   BOOLEAN DEFAULT false,
+  created_at        TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(tenant_id, charge_point_id)
+);
+
+-- ─── CONNECTORS ─────────────────────────────────────────────────────────────
+CREATE TABLE connectors (
+  id                BIGSERIAL PRIMARY KEY,
+  tenant_id         BIGINT NOT NULL REFERENCES tenants(id),
+  charger_id        BIGINT NOT NULL REFERENCES chargers(id),
+  connector_number  INTEGER NOT NULL,     -- 1, 2, 3...
+  connector_type    TEXT,                 -- 'CCS2', 'CHAdeMO', 'Type2', 'GB/T'
+  max_power_kw      NUMERIC(6,2),
+  status            TEXT DEFAULT 'Unavailable',
+  power_kw          NUMERIC(8,3) DEFAULT 0,
+  created_at        TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(charger_id, connector_number)
+);
+
+-- ─── SESSIONS ───────────────────────────────────────────────────────────────
+CREATE TABLE sessions (
+  id                BIGSERIAL PRIMARY KEY,
+  tenant_id         BIGINT NOT NULL REFERENCES tenants(id),
+  charger_id        BIGINT NOT NULL REFERENCES chargers(id),
+  connector_id      BIGINT NOT NULL REFERENCES connectors(id),
+  shift_id          BIGINT REFERENCES shifts(id),
+  tariff_id         BIGINT REFERENCES tariffs(id),
+
+  transaction_id    BIGINT,               -- OCPP transaction_id
+  id_tag            TEXT,                 -- RFID/token used
+  customer_id       BIGINT REFERENCES user_profiles(id),
+
+  started_at        TIMESTAMPTZ,
+  stopped_at        TIMESTAMPTZ,
+  duration_seconds  INTEGER GENERATED ALWAYS AS
+                    (EXTRACT(EPOCH FROM stopped_at - started_at)::INTEGER) STORED,
+
+  energy_wh         NUMERIC(12,3) DEFAULT 0,
+  start_meter_wh    NUMERIC(12,3),
+  stop_meter_wh     NUMERIC(12,3),
+
+  unit_price        NUMERIC(12,4),        -- price/kWh at session start (locked in)
+  session_fee       NUMERIC(10,4) DEFAULT 0,
+  idle_fee          NUMERIC(10,4) DEFAULT 0,
+  amount_due        NUMERIC(12,3),
+  amount_paid       NUMERIC(12,3),
+
+  status            TEXT DEFAULT 'active', -- 'active' | 'completed' | 'error'
+  stop_reason       TEXT,
+  billing_status    TEXT DEFAULT 'pending', -- 'pending' | 'billed' | 'void'
+
+  source            TEXT DEFAULT 'ocpp',  -- 'ocpp' | 'import'
+  created_at        TIMESTAMPTZ DEFAULT now()
+);
+
+-- ─── BILLING RECORDS ────────────────────────────────────────────────────────
+CREATE TABLE billing_records (
+  id                BIGSERIAL PRIMARY KEY,
+  tenant_id         BIGINT NOT NULL REFERENCES tenants(id),
+  session_id        BIGINT UNIQUE NOT NULL REFERENCES sessions(id),
+  shift_id          BIGINT REFERENCES shifts(id),
+
+  energy_kwh        NUMERIC(12,3),
+  unit_price        NUMERIC(12,4),
+  energy_amount     NUMERIC(12,3),
+  session_fee       NUMERIC(10,4) DEFAULT 0,
+  idle_fee          NUMERIC(10,4) DEFAULT 0,
+  tax_amount        NUMERIC(10,3) DEFAULT 0,
+  total_amount      NUMERIC(12,3),
+
+  currency          TEXT DEFAULT 'AED',
+  payment_method    TEXT DEFAULT 'cash',  -- 'cash' | 'card' | 'app' | 'rfid_prepaid'
+  payment_status    TEXT DEFAULT 'pending',
+
+  created_at        TIMESTAMPTZ DEFAULT now()
+);
+
+-- ─── SHIFTS ─────────────────────────────────────────────────────────────────
+CREATE TABLE shifts (
+  id                BIGSERIAL PRIMARY KEY,
+  tenant_id         BIGINT NOT NULL REFERENCES tenants(id),
+  station_id        BIGINT NOT NULL REFERENCES stations(id),
+  officer_id        BIGINT REFERENCES user_profiles(id),
+
+  planned_start     TIMESTAMPTZ NOT NULL,
+  planned_end       TIMESTAMPTZ NOT NULL,
+  actual_start      TIMESTAMPTZ,
+  actual_end        TIMESTAMPTZ,
+
+  status            TEXT DEFAULT 'scheduled', -- 'scheduled'|'active'|'closing'|'closed'
+
+  -- Financials (computed at close)
+  total_sessions    INTEGER DEFAULT 0,
+  total_energy_wh   NUMERIC(14,3) DEFAULT 0,
+  expected_cash     NUMERIC(12,3) DEFAULT 0,
+  submitted_cash    NUMERIC(12,3),
+  discrepancy       NUMERIC(12,3),
+  discrepancy_reason TEXT,
+
+  handover_pdf_url  TEXT,
+  supervisor_id     BIGINT REFERENCES user_profiles(id),
+  approved_at       TIMESTAMPTZ,
+
+  created_at        TIMESTAMPTZ DEFAULT now()
+);
+
+-- ─── TARIFFS ────────────────────────────────────────────────────────────────
+CREATE TABLE tariffs (
+  id                BIGSERIAL PRIMARY KEY,
+  tenant_id         BIGINT NOT NULL REFERENCES tenants(id),
+  name              TEXT NOT NULL,
+  currency          TEXT DEFAULT 'AED',
+  price_per_kwh     NUMERIC(12,4) NOT NULL,
+  session_fee       NUMERIC(10,4) DEFAULT 0,
+  idle_fee_per_min  NUMERIC(10,4) DEFAULT 0,
+  is_default        BOOLEAN DEFAULT false,
+  valid_from        TIMESTAMPTZ,
+  valid_until       TIMESTAMPTZ,
+  created_at        TIMESTAMPTZ DEFAULT now()
+);
+
+-- ─── RFID CARDS ─────────────────────────────────────────────────────────────
+CREATE TABLE rfid_cards (
+  id                BIGSERIAL PRIMARY KEY,
+  tenant_id         BIGINT NOT NULL REFERENCES tenants(id),
+  tag               TEXT NOT NULL,
+  label             TEXT,
+  owner_id          BIGINT REFERENCES user_profiles(id),
+  card_type         TEXT DEFAULT 'standard', -- 'standard'|'operator'|'master'
+  status            TEXT DEFAULT 'active',   -- 'active'|'blocked'|'expired'
+  balance           NUMERIC(10,3),           -- for prepaid cards
+  created_at        TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(tenant_id, tag)
+);
+
+-- ─── ALARMS ─────────────────────────────────────────────────────────────────
+CREATE TABLE alarms (
+  id                BIGSERIAL PRIMARY KEY,
+  tenant_id         BIGINT NOT NULL REFERENCES tenants(id),
+  charger_id        BIGINT NOT NULL REFERENCES chargers(id),
+  connector_id      BIGINT REFERENCES connectors(id),
+  error_code        TEXT NOT NULL,
+  error_description TEXT,
+  human_description TEXT,   -- from ALARM_CODES dictionary
+  severity          TEXT DEFAULT 'warning', -- 'info'|'warning'|'critical'
+  status            TEXT DEFAULT 'open',    -- 'open'|'resolved'
+  occurred_at       TIMESTAMPTZ DEFAULT now(),
+  resolved_at       TIMESTAMPTZ,
+  resolved_by       BIGINT REFERENCES user_profiles(id)
+);
+
+-- ─── OCPP REMOTE COMMANDS ───────────────────────────────────────────────────
+CREATE TABLE remote_commands (
+  id                BIGSERIAL PRIMARY KEY,
+  tenant_id         BIGINT NOT NULL REFERENCES tenants(id),
+  charger_id        BIGINT NOT NULL REFERENCES chargers(id),
+  command_type      TEXT NOT NULL,
+  payload           JSONB,
+  status            TEXT DEFAULT 'pending',
+  response_payload  JSONB,
+  created_by        BIGINT REFERENCES user_profiles(id),
+  created_at        TIMESTAMPTZ DEFAULT now(),
+  executed_at       TIMESTAMPTZ
+);
+```
+
+---
+
+## Part 21: Mobile App Specifications
+
+### 21.1 Operator App
+
+**Purpose:** Field staff use this during their shift to monitor chargers, assist customers, and submit cash handover.
+
+**Platform:** React Native (Expo) — iOS + Android  
+**Auth:** Same Supabase Auth as web, role = `officer`
+
+#### Screens:
+
+```
+Operator App Navigation:
+├── Home (My Shift)
+│   ├── Current shift info: station, start time, elapsed, session count
+│   ├── Live revenue for this shift (updates via Realtime)
+│   └── Quick action: Start Shift / End Shift
+│
+├── Chargers (Live Monitor)
+│   ├── List of chargers at my station
+│   ├── Each charger: status dot, connector cards
+│   ├── Connector card: status, power kW, session duration
+│   └── Tap → Remote Start / Remote Stop / Unlock
+│
+├── Sessions (Today's Sessions)
+│   ├── List of sessions in my current shift
+│   ├── Filter: all / active / completed
+│   └── Tap → Session details (duration, kWh, amount)
+│
+├── Handover
+│   ├── "End Shift & Submit Cash" button
+│   ├── Cash denomination entry (500, 200, 100, 50, 20, 10, 5, 1, 0.5)
+│   ├── Total submitted vs expected (color-coded)
+│   ├── Discrepancy note (Arabic keyboard supported)
+│   ├── Digital signature pad
+│   └── Submit → generates PDF, notifies supervisor
+│
+├── Alarms
+│   ├── Active alarms at my station
+│   ├── Tap → acknowledge + add note
+│   └── Push notification on new critical alarm
+│
+└── Profile
+    ├── My info, language setting
+    └── Logout
+```
+
+#### Key Technical Features:
+- **Offline mode**: Shift and session data cached locally (SQLite via Expo SQLite or MMKV). If connectivity lost, caches locally and syncs when restored.
+- **Push notifications**: Expo Push → new alarm, session started/stopped, supervisor message
+- **Biometric auth**: FaceID/Fingerprint to unlock app
+- **QR scanner**: Scan charger QR code to quickly navigate to that charger's control panel
+
+### 21.2 Customer App
+
+**Purpose:** EV drivers find charging stations, start/stop sessions, pay, and view history.
+
+**Platform:** React Native (Expo) — iOS + Android  
+**Auth:** Supabase Auth, role = `customer` — can self-register
+
+#### Screens:
+
+```
+Customer App Navigation:
+├── Map (Station Finder)
+│   ├── Full-screen map (React Native Maps / Google Maps)
+│   ├── Pins for all public stations (color = availability)
+│   ├── Tap pin → Station card (name, available chargers, live status)
+│   ├── "Navigate" → opens Google Maps / Waze
+│   └── Filter: connector type, power level, available now
+│
+├── Charge (Active Session)
+│   ├── Shown when a session is active
+│   ├── Live kW, kWh, duration (via Realtime)
+│   ├── Estimated cost so far
+│   ├── "Stop Charging" button → sends RemoteStop command
+│   └── "View Receipt" when session ends
+│
+├── Start Charging
+│   ├── Scan QR code on charger → auto-select station + connector
+│   ├── OR: select station → charger → connector manually
+│   ├── Select tariff (shown with price)
+│   ├── Payment method (card via Stripe/Tap, RFID, app balance)
+│   └── "Start Charging" → authorization + RemoteStart
+│
+├── History
+│   ├── List of all past sessions
+│   ├── Filter: date range, station
+│   ├── Tap → Session receipt with kWh, duration, amount, charger
+│   └── Download PDF receipt
+│
+├── Wallet
+│   ├── Prepaid balance
+│   ├── Top-up (Stripe / Tap Payments)
+│   └── Transaction history
+│
+├── RFID Cards
+│   ├── Register RFID card
+│   ├── Link/unlink cards
+│   └── Set card as default
+│
+└── Profile
+    ├── Name, email, phone, car model
+    ├── Language (Arabic / English)
+    └── Notification preferences
+```
+
+#### Key Technical Features:
+- **QR code scan to start**: Camera permission → decode connector QR → one-tap start
+- **Real-time session tracking**: Supabase Realtime subscription for live kW/kWh/cost
+- **In-app payments**: Stripe (global) or Tap Payments (MENA) for card payments
+- **Push notifications**: Session started, session complete with receipt, station availability alerts
+- **Map clustering**: Group nearby stations at low zoom levels
+- **Guest flow**: Start a session without account (pay by card), create account post-session
+
+### 21.3 Manager App
+
+**Purpose:** Station managers and tenant admins monitor operations, approve handovers, review reports, and manage incidents — from their phone.
+
+**Platform:** React Native (Expo) — iOS + Android  
+**Auth:** Supabase Auth, role = `tenant_admin` or `station_manager`
+
+#### Screens:
+
+```
+Manager App Navigation:
+├── Dashboard
+│   ├── KPI cards: Online chargers, Active sessions, Today revenue, Alarms
+│   ├── Charger status grid (colored dots, live via Realtime)
+│   ├── Mini chart: sessions this week
+│   └── Notification bell: pending approvals, critical alarms
+│
+├── Stations
+│   ├── List of all stations
+│   ├── Tap → Station detail: chargers, live status, today's sessions
+│   └── Quick actions: Reset all, Download report
+│
+├── Shifts & Handover
+│   ├── Active shifts: officer, start time, sessions, expected cash
+│   ├── Pending approvals: submitted handovers awaiting review
+│   ├── Tap → View handover details, PDF, discrepancy
+│   ├── Approve / Reject with note
+│   └── History: all past shifts with status
+│
+├── Reports
+│   ├── Revenue: today / this week / this month / custom range
+│   ├── Energy: kWh delivered, CO₂ avoided
+│   ├── Sessions: count, average duration, peak hours
+│   ├── Per station / per charger breakdown
+│   └── Export: PDF or CSV via email
+│
+├── Alarms
+│   ├── All active and resolved alarms across all stations
+│   ├── Filter: station, severity, status
+│   ├── Tap → assign, resolve, add note
+│   └── Push: immediate alert on critical alarm
+│
+├── Operators (Staff)
+│   ├── All operator accounts
+│   ├── Approve new registrations
+│   ├── Assign shifts
+│   └── View operator performance (sessions per shift, discrepancies)
+│
+└── Settings
+    ├── Station settings, tariffs, RFID cards
+    ├── Subscription plan info
+    └── White-label branding preview
+```
+
+### 21.4 Shared Mobile Architecture
+
+```
+Mobile Apps Shared Code:
+├── packages/
+│   ├── shared-types/     → TypeScript interfaces (Session, Charger, Shift, etc.)
+│   ├── shared-api/       → Supabase client hooks (useSession, useCharger, etc.)
+│   ├── shared-ui/        → Shared components (StatusBadge, KpiCard, etc.)
+│   └── shared-utils/     → formatters, regionDetection, arabicText
+│
+├── apps/
+│   ├── operator/         → Expo operator app
+│   ├── customer/         → Expo customer app
+│   ├── manager/          → Expo manager app
+│   └── web/              → React + Vite web app
+```
+
+**Monorepo tool:** Turborepo or nx (preferred: Turborepo — simpler setup)
+
+```
+chargeOS/
+├── apps/
+│   ├── web/              (React + Vite)
+│   ├── operator/         (Expo)
+│   ├── customer/         (Expo)
+│   └── manager/          (Expo)
+├── packages/
+│   ├── types/
+│   ├── api-hooks/
+│   ├── ui-components/
+│   └── utils/
+├── ocpp-server/          (Node.js)
+├── supabase/
+│   └── migrations/
+└── turbo.json
+```
+
+### 21.5 Push Notifications Architecture
+
+```typescript
+// Expo push token stored per user device
+CREATE TABLE push_tokens (
+  id              BIGSERIAL PRIMARY KEY,
+  user_id         BIGINT NOT NULL REFERENCES user_profiles(id),
+  tenant_id       BIGINT NOT NULL REFERENCES tenants(id),
+  expo_push_token TEXT NOT NULL,
+  platform        TEXT,  -- 'ios' | 'android'
+  created_at      TIMESTAMPTZ DEFAULT now()
+);
+
+// Edge Function: send push notification
+// supabase/functions/send-push/index.ts
+const sendPush = async (userId: number, title: string, body: string, data?: object) => {
+  const { data: tokens } = await supabase
+    .from('push_tokens')
+    .select('expo_push_token')
+    .eq('user_id', userId);
+
+  const messages = tokens.map(t => ({
+    to: t.expo_push_token,
+    sound: 'default',
+    title,
+    body,
+    data,
+  }));
+
+  await fetch('https://exp.host/--/api/v2/push/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(messages),
+  });
+};
+```
+
+---
+
+## Part 22: Mobile-Ready Web Application
+
+### 22.1 Responsive Design Strategy
+
+The web app is **mobile-first** — designed to work on a 375px screen and scale up, not the other way around. All pages must be usable on a phone browser.
+
+```
+Breakpoints (Tailwind):
+  sm: 640px  → tablet portrait
+  md: 768px  → tablet landscape
+  lg: 1024px → laptop
+  xl: 1280px → desktop
+  2xl: 1536px → wide desktop
+```
+
+### 22.2 Navigation on Mobile
+
+```typescript
+// Mobile: bottom navigation bar (like a native app)
+// Desktop: left sidebar
+
+const Navigation = () => {
+  const isMobile = useMediaQuery('(max-width: 768px)');
+  return isMobile ? <BottomNav /> : <Sidebar />;
+};
+
+// Bottom nav items (mobile):
+// [Dashboard] [Chargers] [Sessions] [Shifts] [More]
+```
+
+### 22.3 Mobile-Specific UI Patterns
+
+- **Touch targets**: All buttons/taps minimum 44×44px
+- **Cards instead of tables**: On mobile, data tables convert to card stacks automatically
+- **Pull-to-refresh**: On mobile session and charger lists
+- **Swipe actions**: Swipe left on session card → Stop Charging | Swipe right → View Details
+- **Native date pickers**: Use device native date picker on mobile
+- **Haptic feedback**: On successful actions (session started/stopped)
+- **App install prompt**: Progressive Web App (PWA) support — "Add to Home Screen" banner
+
+### 22.4 PWA Configuration
+
+```json
+// public/manifest.json
+{
+  "name": "ChargeOS",
+  "short_name": "ChargeOS",
+  "theme_color": "#3B82F6",
+  "background_color": "#FFFFFF",
+  "display": "standalone",
+  "start_url": "/dashboard",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
+```
+
+PWA allows the web app to be installed on a phone like a native app, used as fallback for operators/managers who don't want to install from the app store.
+
+---
+
+## Part 23: Phase 0 — New App Bootstrap Checklist
+
+This is the exact sequence to start the new ChargeOS app from zero:
+
+```
+Phase 0.1 — Infrastructure Setup (Day 1)
+  ✓ Create new Supabase project (production-chargeOS)
+  ✓ Create new Supabase project (staging-chargeOS)
+  ✓ Initialize Turborepo monorepo: apps/web, apps/operator, apps/customer, apps/manager
+  ✓ Configure shared packages: types, api-hooks, ui-components, utils
+  ✓ Set up ocpp-server as workspace package
+  ✓ Configure GitHub Actions CI: build + type-check + lint on PR
+  ✓ Deploy OCPP server to Railway with multi-tenant URL schema
+  ✓ Configure Railway environment variables
+
+Phase 0.2 — Database Foundation (Day 1-2)
+  ✓ Apply migration 0001: tenants, subscription_plans
+  ✓ Apply migration 0002: user_profiles (integer id + UUID auth_id)
+  ✓ Apply migration 0003: tenant_branding, supported_currencies
+  ✓ Apply migration 0004: stations, chargers, connectors
+  ✓ Apply migration 0005: tariffs, rfid_cards
+  ✓ Apply migration 0006: sessions, billing_records, shifts
+  ✓ Apply migration 0007: alarms, remote_commands, push_tokens
+  ✓ Apply migration 0008: RLS policies — tenant_isolation on ALL tables
+  ✓ Apply migration 0009: subscription plan enforcement triggers
+
+Phase 0.3 — Auth & Tenancy (Day 2-3)
+  ✓ Supabase Auth configured (email + phone OTP)
+  ✓ user_profiles auto-created on auth.users INSERT (trigger)
+  ✓ JWT custom claim: tenant_id injected via auth hook
+  ✓ First-run wizard: creates tenant + branding + first station
+  ✓ Super-admin seeded (your personal account)
+
+Phase 0.4 — Web App Scaffold (Day 3-5)
+  ✓ Vite + React + Tailwind + shadcn/ui
+  ✓ White-label theme loader (CSS custom properties)
+  ✓ Region auto-detection + settings
+  ✓ Mobile-responsive layout (Sidebar ↔ BottomNav)
+  ✓ Auth flow: login, register, approve, first-run wizard
+  ✓ Dashboard skeleton with Realtime subscriptions
+  ✓ PWA manifest + service worker
+
+Phase 0.5 — OCPP Server Multi-Tenant (Day 5-6)
+  ✓ Tenant resolution from URL slug + custom domain
+  ✓ All DB writes include tenant_id
+  ✓ Auto-discovery: BootNotification → fingerprint → create charger + connectors
+  ✓ Health endpoint returns tenant connection counts
+
+Phase 0.6 — Core Features (Week 2)
+  ✓ Charger management (CRUD + live status)
+  ✓ Session management (live + history)
+  ✓ Tariff management
+  ✓ RFID card management
+  ✓ Shift + handover flow (with Arabic PDF)
+  ✓ Alarm management
+
+Phase 0.7 — Mobile Apps (Week 3-4)
+  ✓ Operator app: shift home, charger monitor, handover submit
+  ✓ Manager app: dashboard, approvals, reports
+  ✓ Customer app: map, QR scan, session tracking, payment
+  ✓ Push notifications: Expo Push setup
+  ✓ Submit to App Store + Play Store (TestFlight / Internal Testing)
+
+Phase 0.8 — SaaS Layer (Week 4-5)
+  ✓ Subscription plans seeded
+  ✓ Stripe integration: create customer, subscription, webhook
+  ✓ Feature gate enforcement on all premium features
+  ✓ Super-admin panel: tenant management, MRR dashboard
+  ✓ White-label: branding editor, custom domain instructions
+
+Phase 0.9 — First Customer Onboarding
+  ✓ Create tenant for first external customer
+  ✓ Onboarding email flow (welcome, charger setup guide)
+  ✓ First charger connected under their tenant
+  ✓ Invoice generated via Stripe
+```
+
+---
+
 ## Platform Advantages Over Any Existing System
 
-| Our Platform | Generic CPMS |
-|---|---|
-| OCPP 1.6 + 1.6J + 2.0 from day one | Usually single version |
-| Auto-discovery: plug in charger → it appears in dashboard automatically | Manual registration always |
-| **Auto region detection**: IP/GPS → currency, decimals, timezone pre-filled | Manual config only |
-| **Configurable decimal places** per currency (0.193 AED, 5.25 GBP, etc.) | Fixed 2 decimal places |
-| **Multi-currency support** with per-org currency and format settings | Single currency per instance |
-| **Zero-polling real-time dashboard**: charger status, kW, kWh — live via WebSocket | Polling every 30–60s |
-| Status auto-update: Online / Idle / Charging / Faulted / Offline without refresh | Page refresh needed |
-| Live session duration counter (increments every second, no server calls) | Not available |
-| First-run setup wizard with auto-detected region settings | Manual setup spreadsheets |
-| Shift-based cash handover with denomination tracking | Not available |
-| Arabic PDF support (existing `arabicReshaper.ts`) | Rare |
-| Full meter value history per session (every reading stored) | Usually aggregated only |
-| Excel import fallback for non-OCPP chargers | Unique to our system |
-| Deep firmware intelligence: all 50+ config keys typed | Generic |
-| Open source stack, self-hosted option | SaaS lock-in |
-| Dual OCPP channel (operation + maintenance) | Unique |
+| Feature | ChargeOS | Generic CPMS |
+|---|---|---|
+| **SaaS multi-tenancy** | Full tenant isolation via RLS, one instance serves unlimited customers | Single tenant or expensive enterprise |
+| **White-label** | Per-tenant logo, colors, domain, app name, branded PDFs | Not available or costly add-on |
+| **Monthly subscription model** | Starter / Pro / Enterprise plans, Stripe billing, feature flags | License fee or revenue share |
+| **Super-admin panel** | Platform-wide health, tenant management, MRR dashboard | Not applicable |
+| **Integer primary keys** | BIGSERIAL — readable IDs (1, 2, 3…), fast joins, small indexes | UUID everywhere |
+| **New standalone app** | Fresh codebase, clean schema, no legacy baggage | Usually upgrades of old systems |
+| **Operator mobile app** | React Native: shift home, live monitor, cash handover submission | Web-only or non-existent |
+| **Customer mobile app** | Map finder, QR scan to charge, live tracking, Stripe payments | Not available in most CPMS |
+| **Manager mobile app** | Live dashboard, handover approvals, reports, alarm response | Non-existent |
+| **Mobile-ready web** | Mobile-first Tailwind, bottom nav on phone, PWA installable | Desktop-only or poor mobile |
+| **Push notifications** | Expo Push: alarm alerts, session events, handover requests | Email only |
+| **OCPP 1.6 + 1.6J + 2.0.1** | All three from day one, protocol auto-detected per charger | Usually single version |
+| **Auto-discovery** | Charger plugs in → auto-fingerprinted, registered, connectors created | Manual registration always |
+| **Auto region detection** | IP/GPS/locale → currency, decimals, timezone, language pre-filled | Manual config only |
+| **Configurable decimal places** | 0.193 AED or 5.25 GBP — per tenant, synced to charger firmware | Fixed 2 decimal places |
+| **Multi-currency** | 11+ currencies, per-tenant setting, global formatter | Single currency per install |
+| **Zero-polling real-time dashboard** | All updates via Supabase Realtime WebSocket, < 1 second | Polling every 30–60s |
+| **Shift-based cash handover** | Denomination tracking, digital signature, discrepancy reason | Not available |
+| **Arabic PDF + RTL support** | Canvas-based shaping, correct ligatures, right-to-left layout | Rare |
+| **Deep firmware intelligence** | All 50+ config keys typed, alarm codes dictionary, QR management | Generic |
+| **Monorepo with shared types** | Turborepo: web + 3 mobile apps share types, hooks, components | Separate codebases |
+| **Open stack, self-hostable** | Supabase + Railway, no vendor lock-in | SaaS-only |
+| **Dual OCPP channel** | operation + maintenance URLs from firmware analysis | Not documented |
