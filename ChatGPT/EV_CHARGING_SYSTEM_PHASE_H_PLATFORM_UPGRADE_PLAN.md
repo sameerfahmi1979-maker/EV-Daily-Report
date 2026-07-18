@@ -10,6 +10,17 @@
 
 ---
 
+> ### DATABASE RULE — NO UUID ANYWHERE
+> **This is a brand-new Supabase project (not the existing one).**  
+> Every primary key and foreign key in the entire database is a `BIGSERIAL` integer.  
+> `UUID` is **never used** as a column type anywhere in our schema.  
+> The only UUID-valued data that exists is `user_profiles.auth_uid TEXT` — a plain TEXT column  
+> that stores the Supabase Auth internal user ID (which Supabase Auth generates as UUID internally,  
+> but we store it as TEXT and never declare it as `UUID` type). All RLS policies, all joins,  
+> all foreign keys use integer IDs only. This rule has no exceptions.
+
+---
+
 ## Executive Summary
 
 **ChargeOS** is a new, standalone SaaS product — not an upgrade of the existing app. It is built from scratch with a fresh database (integer primary keys, not UUIDs), a multi-tenant architecture, white-label capability, and native mobile apps for operators, customers, and managers.
@@ -300,28 +311,34 @@ async function onGetConfigurationResponse(chargePointId: string, keys: ConfigKey
 
 ## Part 2: Complete Database Schema
 
-All migrations in `supabase/migrations/`.
+> **RULE: Zero UUID types.** Every `PRIMARY KEY` is `BIGSERIAL`. Every foreign key is `BIGINT`.  
+> This is a **new Supabase project** — not the existing one. Start from a clean database.
+
+All migrations in `supabase/migrations/` of the new project.
 
 ### 2.1 Organization Hierarchy
 
 ```sql
--- Organizations (top-level tenants)
+-- Organizations (top-level grouping within a tenant)
 CREATE TABLE organizations (
-  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id          BIGSERIAL PRIMARY KEY,
+  tenant_id   BIGINT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   name        TEXT NOT NULL,
-  slug        TEXT UNIQUE NOT NULL,
+  slug        TEXT NOT NULL,
   country     TEXT DEFAULT 'AE',
   currency    TEXT DEFAULT 'AED',
   logo_url    TEXT,
   timezone    TEXT DEFAULT 'Asia/Dubai',
-  created_at  TIMESTAMPTZ DEFAULT now()
+  created_at  TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(tenant_id, slug)
 );
 
 -- Operators (belong to an organization, can manage stations)
 CREATE TABLE operators (
-  id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  organization_id    UUID REFERENCES organizations(id) ON DELETE CASCADE,
-  parent_operator_id UUID REFERENCES operators(id),
+  id                 BIGSERIAL PRIMARY KEY,
+  tenant_id          BIGINT NOT NULL REFERENCES tenants(id),
+  organization_id    BIGINT REFERENCES organizations(id) ON DELETE CASCADE,
+  parent_operator_id BIGINT REFERENCES operators(id),
   name               TEXT NOT NULL,
   contact_email      TEXT,
   contact_phone      TEXT,
@@ -332,8 +349,9 @@ CREATE TABLE operators (
 
 -- Stations (physical locations, belong to operator)
 CREATE TABLE stations (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  operator_id     UUID REFERENCES operators(id) ON DELETE CASCADE,
+  id              BIGSERIAL PRIMARY KEY,
+  tenant_id       BIGINT NOT NULL REFERENCES tenants(id),
+  operator_id     BIGINT REFERENCES operators(id) ON DELETE CASCADE,
   name            TEXT NOT NULL,
   address         TEXT,
   city            TEXT,
@@ -341,7 +359,7 @@ CREATE TABLE stations (
   lat             NUMERIC(10,7),
   lng             NUMERIC(10,7),
   timezone        TEXT DEFAULT 'Asia/Dubai',
-  max_power_kw    NUMERIC(10,2),       -- Station-level power limit
+  max_power_kw    NUMERIC(10,2),
   contact_phone   TEXT,
   operating_hours_start  TIME DEFAULT '00:00:00',
   operating_hours_end    TIME DEFAULT '23:59:59',
@@ -351,29 +369,31 @@ CREATE TABLE stations (
 
 -- Station photos
 CREATE TABLE station_photos (
-  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  station_id  UUID REFERENCES stations(id) ON DELETE CASCADE,
+  id          BIGSERIAL PRIMARY KEY,
+  tenant_id   BIGINT NOT NULL REFERENCES tenants(id),
+  station_id  BIGINT NOT NULL REFERENCES stations(id) ON DELETE CASCADE,
   url         TEXT NOT NULL,
   is_primary  BOOLEAN DEFAULT false,
   uploaded_at TIMESTAMPTZ DEFAULT now()
 );
 ```
 
-### 2.2 Charger & Connector Tables (Enhanced)
+### 2.2 Charger & Connector Tables
 
 ```sql
 -- Chargers (physical OCPP charge points)
-CREATE TABLE ocpp_chargers (
-  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  charge_point_id       TEXT UNIQUE NOT NULL,          -- OCPP identity (e.g. "244801000001")
-  station_id            UUID REFERENCES stations(id),  -- NULL = unassigned
-  operator_id           UUID REFERENCES operators(id),
+CREATE TABLE chargers (
+  id                    BIGSERIAL PRIMARY KEY,
+  tenant_id             BIGINT NOT NULL REFERENCES tenants(id),
+  charge_point_id       TEXT NOT NULL,               -- OCPP identity (e.g. "244801000001")
+  station_id            BIGINT REFERENCES stations(id),   -- NULL = unassigned
+  operator_id           BIGINT REFERENCES operators(id),
   -- Hardware identity (auto-filled on first connect)
-  vendor                TEXT,                          -- e.g. "com.cnchargepoint"
+  vendor                TEXT,                        -- e.g. "com.cnchargepoint"
   model                 TEXT,
   serial_number         TEXT,
   firmware_version      TEXT,
-  ocpp_protocol         TEXT DEFAULT 'ocpp1.6',        -- 'ocpp1.6' | 'ocpp2.0.1'
+  ocpp_protocol         TEXT DEFAULT 'ocpp1.6j',     -- 'ocpp1.6' | 'ocpp1.6j' | 'ocpp2.0.1'
   num_connectors        INTEGER DEFAULT 1,
   -- Capabilities (auto-filled after GetConfiguration)
   supported_features    TEXT[],
@@ -381,62 +401,65 @@ CREATE TABLE ocpp_chargers (
   reservation_supported     BOOLEAN DEFAULT false,
   local_auth_supported      BOOLEAN DEFAULT false,
   -- Connection state
-  connection_status     TEXT DEFAULT 'offline',        -- 'online' | 'offline'
+  connection_status     TEXT DEFAULT 'offline',      -- 'online' | 'offline'
   last_heartbeat_at     TIMESTAMPTZ,
   last_boot_at          TIMESTAMPTZ,
-  local_ip_address      TEXT,                          -- Filled if discoverable
+  local_ip_address      TEXT,
   -- Discovery metadata
   auto_discovered       BOOLEAN DEFAULT false,
   first_seen_at         TIMESTAMPTZ DEFAULT now(),
-  -- Config (last known values from GetConfiguration)
-  last_config           JSONB,                         -- Full config key-value map
+  -- Config (last known from GetConfiguration)
+  last_config           JSONB,
   -- Physical info
   location_notes        TEXT,
-  power_type            TEXT DEFAULT 'AC',             -- 'AC' | 'DC'
+  power_type            TEXT DEFAULT 'AC',           -- 'AC' | 'DC'
   max_power_kw          NUMERIC(10,2),
   created_at            TIMESTAMPTZ DEFAULT now(),
-  updated_at            TIMESTAMPTZ DEFAULT now()
+  updated_at            TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(tenant_id, charge_point_id)
 );
 
 -- Connectors (physical dispensers/guns on a charger)
-CREATE TABLE ocpp_connectors (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  charge_point_id TEXT REFERENCES ocpp_chargers(charge_point_id) ON DELETE CASCADE,
-  connector_id    INTEGER NOT NULL,
-  -- Physical info
-  connector_type  TEXT,                -- 'Type2' | 'CCS2' | 'CHAdeMO' | 'GBT' | 'CCS1' | 'NACS'
-  max_power_kw    NUMERIC(10,2),
+CREATE TABLE connectors (
+  id                  BIGSERIAL PRIMARY KEY,
+  tenant_id           BIGINT NOT NULL REFERENCES tenants(id),
+  charger_id          BIGINT NOT NULL REFERENCES chargers(id) ON DELETE CASCADE,
+  connector_number    INTEGER NOT NULL,              -- 1, 2, 3...
+  connector_type      TEXT,    -- 'Type2' | 'CCS2' | 'CHAdeMO' | 'GBT' | 'CCS1' | 'NACS'
+  max_power_kw        NUMERIC(10,2),
   -- Live state
-  status          TEXT DEFAULT 'Unavailable',
-  power_kw        NUMERIC(10,2) DEFAULT 0,
-  voltage_v       NUMERIC(10,2),
-  current_a       NUMERIC(10,2),
-  -- Active session ref
-  current_session_id  UUID,           -- FK added after sessions table
+  status              TEXT DEFAULT 'Unavailable',
+  power_kw            NUMERIC(10,3) DEFAULT 0,
+  voltage_v           NUMERIC(10,2),
+  current_a           NUMERIC(10,2),
+  -- Active session ref (integer FK, set/cleared per session)
+  current_session_id  BIGINT,                       -- FK to sessions(id), set after sessions table created
   -- Fault state
-  error_code      TEXT,
-  vendor_error    TEXT,
-  updated_at      TIMESTAMPTZ DEFAULT now(),
-  UNIQUE(charge_point_id, connector_id)
+  error_code          TEXT,
+  vendor_error        TEXT,
+  updated_at          TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(charger_id, connector_number)
 );
 ```
 
 ### 2.3 Session & Billing Tables
 
 ```sql
--- OCPP charging sessions (auto-created by OCPP server)
-CREATE TABLE ocpp_charging_sessions (
-  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+-- Charging sessions (auto-created by OCPP server)
+CREATE TABLE sessions (
+  id                    BIGSERIAL PRIMARY KEY,
+  tenant_id             BIGINT NOT NULL REFERENCES tenants(id),
   -- Identity
-  transaction_id        INTEGER,                   -- OCPP transaction ID
-  charge_point_id       TEXT REFERENCES ocpp_chargers(charge_point_id),
-  connector_id          INTEGER NOT NULL,
-  station_id            UUID REFERENCES stations(id),
-  operator_id           UUID REFERENCES operators(id),
+  transaction_id        INTEGER,                    -- OCPP transaction ID
+  charger_id            BIGINT NOT NULL REFERENCES chargers(id),
+  connector_id          BIGINT NOT NULL REFERENCES connectors(id),
+  station_id            BIGINT REFERENCES stations(id),
+  operator_id           BIGINT REFERENCES operators(id),
   -- Auth
-  id_tag                TEXT,                      -- RFID tag or remote ID
-  rfid_card_id          UUID,                      -- FK to rfid_cards if matched
-  auth_method           TEXT DEFAULT 'rfid',       -- 'rfid' | 'remote' | 'free' | 'app' | 'pos'
+  id_tag                TEXT,                       -- RFID tag or remote ID
+  rfid_card_id          BIGINT,                     -- FK to rfid_cards if matched
+  auth_method           TEXT DEFAULT 'rfid',        -- 'rfid' | 'remote' | 'free' | 'app' | 'pos'
+  customer_id           BIGINT REFERENCES user_profiles(id),
   -- Timing
   start_timestamp       TIMESTAMPTZ NOT NULL,
   stop_timestamp        TIMESTAMPTZ,
@@ -452,90 +475,87 @@ CREATE TABLE ocpp_charging_sessions (
   -- Live readings
   power_kw              NUMERIC(10,3) DEFAULT 0,
   -- Stop info
-  stop_reason           TEXT,                      -- 'Remote' | 'Local' | 'EVDisconnected' | 'DeAuthorized' | 'Other'
+  stop_reason           TEXT,  -- 'Remote' | 'Local' | 'EVDisconnected' | 'DeAuthorized' | 'Other'
   -- Billing
-  tariff_id             UUID,                      -- FK to tariffs
-  unit_price            NUMERIC(10,4),             -- Price per kWh at session start
-  billing_amount        NUMERIC(10,3),             -- Auto-calculated on stop
+  tariff_id             BIGINT,                     -- FK to tariffs
+  unit_price            NUMERIC(10,4),              -- Price per kWh locked at session start
+  billing_amount        NUMERIC(10,3),
   billing_currency      TEXT DEFAULT 'AED',
-  billing_status        TEXT DEFAULT 'pending',    -- 'pending' | 'calculated' | 'paid' | 'disputed'
+  billing_status        TEXT DEFAULT 'pending',     -- 'pending' | 'calculated' | 'paid' | 'disputed'
   -- Shift tracking
-  shift_id              UUID,                      -- FK to shifts table
+  shift_id              BIGINT,                     -- FK to shifts
   -- Protocol
-  ocpp_protocol         TEXT DEFAULT 'ocpp1.6',
+  ocpp_protocol         TEXT DEFAULT 'ocpp1.6j',
   -- State
-  status                TEXT DEFAULT 'active',     -- 'active' | 'completed' | 'error'
+  status                TEXT DEFAULT 'active',      -- 'active' | 'completed' | 'error'
+  source                TEXT DEFAULT 'ocpp',        -- 'ocpp' | 'import'
   created_at            TIMESTAMPTZ DEFAULT now(),
   updated_at            TIMESTAMPTZ DEFAULT now()
 );
 
 -- Meter value history (all readings during a session)
-CREATE TABLE session_meter_values (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  session_id      UUID REFERENCES ocpp_charging_sessions(id) ON DELETE CASCADE,
-  charge_point_id TEXT,
-  connector_id    INTEGER,
-  timestamp       TIMESTAMPTZ NOT NULL,
-  measurand       TEXT NOT NULL,    -- 'Energy.Active.Import.Register' | 'Power.Active.Import' | 'Voltage' | etc.
+CREATE TABLE meter_values (
+  id              BIGSERIAL PRIMARY KEY,
+  tenant_id       BIGINT NOT NULL REFERENCES tenants(id),
+  session_id      BIGINT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  charger_id      BIGINT NOT NULL REFERENCES chargers(id),
+  connector_id    BIGINT NOT NULL REFERENCES connectors(id),
+  recorded_at     TIMESTAMPTZ NOT NULL,
+  measurand       TEXT NOT NULL,   -- 'Energy.Active.Import.Register' | 'Power.Active.Import' | 'Voltage' | etc.
   value           NUMERIC(15,4),
-  unit            TEXT,             -- 'kWh' | 'W' | 'kW' | 'V' | 'A' | '%'
-  phase           TEXT,             -- 'L1' | 'L2' | 'L3' | NULL (for DC)
+  unit            TEXT,            -- 'kWh' | 'W' | 'kW' | 'V' | 'A' | '%'
+  phase           TEXT,            -- 'L1' | 'L2' | 'L3' | NULL
   context         TEXT DEFAULT 'Sample.Periodic'
 );
+CREATE INDEX idx_meter_values_session ON meter_values(session_id, recorded_at DESC);
 
 -- Tariff / pricing plans
 CREATE TABLE tariffs (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  operator_id     UUID REFERENCES operators(id),
+  id              BIGSERIAL PRIMARY KEY,
+  tenant_id       BIGINT NOT NULL REFERENCES tenants(id),
+  operator_id     BIGINT REFERENCES operators(id),
   name            TEXT NOT NULL,
   description     TEXT,
-  -- Simple flat rate
   price_per_kwh   NUMERIC(10,4) NOT NULL,    -- e.g. 0.193
   currency        TEXT DEFAULT 'AED',
-  -- Optional time-of-use
   tou_enabled     BOOLEAN DEFAULT false,
-  tou_config      JSONB,                     -- Array of {start_hour, end_hour, price_per_kwh, days[]}
-  -- Optional session fee
-  session_fee     NUMERIC(10,2) DEFAULT 0,   -- Flat fee per session regardless of energy
-  -- Optional parking/idle fee (after session ends)
-  idle_fee_per_min NUMERIC(10,4) DEFAULT 0,
-  idle_grace_minutes INTEGER DEFAULT 15,
-  -- Validity
+  tou_config      JSONB,   -- [{start_hour, end_hour, price_per_kwh, days[]}]
+  session_fee     NUMERIC(10,2) DEFAULT 0,
+  idle_fee_per_min    NUMERIC(10,4) DEFAULT 0,
+  idle_grace_minutes  INTEGER DEFAULT 15,
   valid_from      TIMESTAMPTZ DEFAULT now(),
   valid_to        TIMESTAMPTZ,
   is_active       BOOLEAN DEFAULT true,
+  is_default      BOOLEAN DEFAULT false,
   created_at      TIMESTAMPTZ DEFAULT now()
 );
 
 -- Billing records (final calculated bill per session)
 CREATE TABLE billing_records (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  session_id      UUID REFERENCES ocpp_charging_sessions(id) UNIQUE,
-  station_id      UUID REFERENCES stations(id),
-  operator_id     UUID REFERENCES operators(id),
-  shift_id        UUID,
-  -- Session summary
+  id              BIGSERIAL PRIMARY KEY,
+  tenant_id       BIGINT NOT NULL REFERENCES tenants(id),
+  session_id      BIGINT UNIQUE NOT NULL REFERENCES sessions(id),
+  station_id      BIGINT REFERENCES stations(id),
+  operator_id     BIGINT REFERENCES operators(id),
+  shift_id        BIGINT,
   charge_point_id TEXT,
-  connector_id    INTEGER,
+  connector_number INTEGER,
   id_tag          TEXT,
   start_time      TIMESTAMPTZ,
   stop_time       TIMESTAMPTZ,
   duration_min    NUMERIC(10,2),
   energy_kwh      NUMERIC(10,4),
-  -- Billing breakdown
-  tariff_id       UUID REFERENCES tariffs(id),
+  tariff_id       BIGINT REFERENCES tariffs(id),
   unit_price      NUMERIC(10,4),
   energy_amount   NUMERIC(10,3),
   session_fee     NUMERIC(10,2) DEFAULT 0,
   idle_fee        NUMERIC(10,3) DEFAULT 0,
   total_amount    NUMERIC(10,3) NOT NULL,
   currency        TEXT DEFAULT 'AED',
-  -- Payment
-  payment_method  TEXT DEFAULT 'cash',      -- 'cash' | 'card' | 'rfid_wallet' | 'free'
-  payment_status  TEXT DEFAULT 'pending',   -- 'pending' | 'paid' | 'waived' | 'disputed'
+  payment_method  TEXT DEFAULT 'cash',   -- 'cash' | 'card' | 'rfid_wallet' | 'app' | 'free'
+  payment_status  TEXT DEFAULT 'pending', -- 'pending' | 'paid' | 'waived' | 'disputed'
   payment_at      TIMESTAMPTZ,
-  -- Source
-  source          TEXT DEFAULT 'ocpp',      -- 'ocpp' | 'import'
+  source          TEXT DEFAULT 'ocpp',   -- 'ocpp' | 'import'
   created_at      TIMESTAMPTZ DEFAULT now(),
   updated_at      TIMESTAMPTZ DEFAULT now()
 );
@@ -544,36 +564,35 @@ CREATE TABLE billing_records (
 ### 2.4 Shift & Handover Tables
 
 ```sql
--- Shift definitions (per station, time-based)
-CREATE TABLE shifts (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  station_id      UUID REFERENCES stations(id) ON DELETE CASCADE,
-  operator_id     UUID REFERENCES operators(id),
-  name            TEXT NOT NULL,           -- e.g. "Morning Shift", "Night Shift"
-  start_time      TIME NOT NULL,           -- e.g. 08:00:00
-  end_time        TIME NOT NULL,           -- e.g. 20:00:00
-  days            INTEGER[] DEFAULT ARRAY[1,2,3,4,5,6,7],  -- 1=Mon ... 7=Sun
+-- Shift templates (per station, time-based)
+CREATE TABLE shift_templates (
+  id              BIGSERIAL PRIMARY KEY,
+  tenant_id       BIGINT NOT NULL REFERENCES tenants(id),
+  station_id      BIGINT NOT NULL REFERENCES stations(id) ON DELETE CASCADE,
+  operator_id     BIGINT REFERENCES operators(id),
+  name            TEXT NOT NULL,           -- "Morning Shift", "Night Shift"
+  start_time      TIME NOT NULL,
+  end_time        TIME NOT NULL,
+  days            INTEGER[] DEFAULT ARRAY[1,2,3,4,5,6,7],  -- 1=Mon...7=Sun
   is_active       BOOLEAN DEFAULT true,
   created_at      TIMESTAMPTZ DEFAULT now()
 );
 
--- Shift instances (actual running shifts)
-CREATE TABLE shift_instances (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  shift_id        UUID REFERENCES shifts(id),
-  station_id      UUID REFERENCES stations(id),
-  operator_id     UUID REFERENCES operators(id),
-  -- Assigned officer
-  officer_id      UUID REFERENCES user_profiles(id),
+-- Shift instances (actual running shifts — created by cron or manually)
+CREATE TABLE shifts (
+  id              BIGSERIAL PRIMARY KEY,
+  tenant_id       BIGINT NOT NULL REFERENCES tenants(id),
+  template_id     BIGINT REFERENCES shift_templates(id),
+  station_id      BIGINT NOT NULL REFERENCES stations(id),
+  operator_id     BIGINT REFERENCES operators(id),
+  officer_id      BIGINT REFERENCES user_profiles(id),
   officer_name    TEXT,
-  -- Timing
   shift_date      DATE NOT NULL,
   planned_start   TIMESTAMPTZ NOT NULL,
   planned_end     TIMESTAMPTZ NOT NULL,
   actual_start    TIMESTAMPTZ,
   actual_end      TIMESTAMPTZ,
-  -- Status
-  status          TEXT DEFAULT 'upcoming', -- 'upcoming' | 'active' | 'closing' | 'closed' | 'disputed'
+  status          TEXT DEFAULT 'upcoming', -- 'upcoming'|'active'|'closing'|'closed'|'disputed'
   -- Financials (auto-calculated on close)
   total_sessions  INTEGER DEFAULT 0,
   total_energy_kwh NUMERIC(12,4) DEFAULT 0,
@@ -581,43 +600,40 @@ CREATE TABLE shift_instances (
   cash_collected  NUMERIC(12,3) DEFAULT 0,
   card_collected  NUMERIC(12,3) DEFAULT 0,
   free_sessions   INTEGER DEFAULT 0,
-  -- Discrepancy
   expected_cash   NUMERIC(12,3) DEFAULT 0,
   actual_cash_submitted NUMERIC(12,3),
   discrepancy     NUMERIC(12,3) GENERATED ALWAYS AS (
     COALESCE(actual_cash_submitted, 0) - expected_cash
   ) STORED,
   discrepancy_reason TEXT,
-  -- Handover
   handover_pdf_url TEXT,
   handover_signed  BOOLEAN DEFAULT false,
   handover_signed_at TIMESTAMPTZ,
-  handover_signed_by UUID REFERENCES user_profiles(id),
-  -- Notes
+  handover_signed_by BIGINT REFERENCES user_profiles(id),
   opening_notes   TEXT,
   closing_notes   TEXT,
+  supervisor_id   BIGINT REFERENCES user_profiles(id),
+  approved_at     TIMESTAMPTZ,
   created_at      TIMESTAMPTZ DEFAULT now(),
   updated_at      TIMESTAMPTZ DEFAULT now()
 );
 
 -- Cash handover acknowledgment
 CREATE TABLE handover_acknowledgments (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  shift_instance_id UUID REFERENCES shift_instances(id) UNIQUE,
-  -- Submitted by officer
-  submitted_by    UUID REFERENCES user_profiles(id),
-  submitted_at    TIMESTAMPTZ DEFAULT now(),
-  cash_amount     NUMERIC(12,3) NOT NULL,
-  denominations   JSONB,                   -- {1000:2, 500:5, 100:10, ...}
-  notes           TEXT,
-  -- Verified by supervisor
-  verified_by     UUID REFERENCES user_profiles(id),
-  verified_at     TIMESTAMPTZ,
-  is_accepted     BOOLEAN,
-  rejection_reason TEXT,
-  -- PDF
-  pdf_url         TEXT,
-  pdf_generated_at TIMESTAMPTZ
+  id                BIGSERIAL PRIMARY KEY,
+  tenant_id         BIGINT NOT NULL REFERENCES tenants(id),
+  shift_id          BIGINT UNIQUE NOT NULL REFERENCES shifts(id),
+  submitted_by      BIGINT NOT NULL REFERENCES user_profiles(id),
+  submitted_at      TIMESTAMPTZ DEFAULT now(),
+  cash_amount       NUMERIC(12,3) NOT NULL,
+  denominations     JSONB,  -- {"500":2, "200":5, "100":10, "50":4, ...}
+  notes             TEXT,
+  verified_by       BIGINT REFERENCES user_profiles(id),
+  verified_at       TIMESTAMPTZ,
+  is_accepted       BOOLEAN,
+  rejection_reason  TEXT,
+  pdf_url           TEXT,
+  pdf_generated_at  TIMESTAMPTZ
 );
 ```
 
@@ -626,38 +642,36 @@ CREATE TABLE handover_acknowledgments (
 ```sql
 -- RFID card inventory
 CREATE TABLE rfid_cards (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  operator_id     UUID REFERENCES operators(id),
-  card_number     TEXT UNIQUE NOT NULL,
-  cardholder_name TEXT,
-  card_type       TEXT DEFAULT 'standard',   -- 'standard' | 'fleet' | 'staff' | 'maintenance'
-  status          TEXT DEFAULT 'inactive',   -- 'inactive' | 'active' | 'suspended' | 'expired'
-  -- Binding
-  user_id         UUID REFERENCES user_profiles(id),
-  -- Limits
+  id              BIGSERIAL PRIMARY KEY,
+  tenant_id       BIGINT NOT NULL REFERENCES tenants(id),
+  operator_id     BIGINT REFERENCES operators(id),
+  tag             TEXT NOT NULL,
+  label           TEXT,
+  card_type       TEXT DEFAULT 'standard',  -- 'standard'|'fleet'|'staff'|'maintenance'|'master'
+  status          TEXT DEFAULT 'inactive',  -- 'inactive'|'active'|'suspended'|'expired'
+  owner_id        BIGINT REFERENCES user_profiles(id),
   expiration_date TIMESTAMPTZ DEFAULT '2099-12-31',
   max_sessions_per_day INTEGER,
-  -- Balance (if prepaid)
-  balance         NUMERIC(10,2) DEFAULT 0,
+  balance         NUMERIC(10,3) DEFAULT 0,  -- prepaid balance
   currency        TEXT DEFAULT 'AED',
-  -- Metadata
   notes           TEXT,
   created_at      TIMESTAMPTZ DEFAULT now(),
-  updated_at      TIMESTAMPTZ DEFAULT now()
+  updated_at      TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(tenant_id, tag)
 );
 
--- Local auth list entries (per charger whitelist)
+-- Local auth list (per-charger whitelist pushed via SendLocalList)
 CREATE TABLE local_auth_list (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  charge_point_id TEXT REFERENCES ocpp_chargers(charge_point_id) ON DELETE CASCADE,
+  id              BIGSERIAL PRIMARY KEY,
+  tenant_id       BIGINT NOT NULL REFERENCES tenants(id),
+  charger_id      BIGINT NOT NULL REFERENCES chargers(id) ON DELETE CASCADE,
   id_tag          TEXT NOT NULL,
-  status          TEXT DEFAULT 'Accepted',  -- 'Accepted' | 'Blocked' | 'Expired' | 'Invalid'
+  status          TEXT DEFAULT 'Accepted',  -- 'Accepted'|'Blocked'|'Expired'|'Invalid'
   expiry_date     TIMESTAMPTZ,
   parent_id_tag   TEXT,
-  -- Sync tracking
   synced_at       TIMESTAMPTZ,
   sync_version    INTEGER DEFAULT 1,
-  UNIQUE(charge_point_id, id_tag)
+  UNIQUE(charger_id, id_tag)
 );
 ```
 
@@ -665,70 +679,72 @@ CREATE TABLE local_auth_list (
 
 ```sql
 -- Remote commands queue
-CREATE TABLE ocpp_remote_commands (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  charge_point_id TEXT REFERENCES ocpp_chargers(charge_point_id),
-  connector_id    INTEGER,
-  command_type    TEXT NOT NULL,    -- 'RemoteStartTransaction' | 'RemoteStopTransaction' |
-                                   -- 'Reset' | 'ChangeConfiguration' | 'GetConfiguration' |
-                                   -- 'UpdateFirmware' | 'GetDiagnostics' | 'SendLocalList' |
-                                   -- 'SetChargingProfile' | 'ClearChargingProfile' |
-                                   -- 'TriggerMessage' | 'UnlockConnector' | 'ClearCache'
+CREATE TABLE remote_commands (
+  id              BIGSERIAL PRIMARY KEY,
+  tenant_id       BIGINT NOT NULL REFERENCES tenants(id),
+  charger_id      BIGINT NOT NULL REFERENCES chargers(id),
+  connector_id    BIGINT REFERENCES connectors(id),
+  command_type    TEXT NOT NULL,
+  -- 'RemoteStartTransaction' | 'RemoteStopTransaction' | 'Reset' |
+  -- 'ChangeConfiguration' | 'GetConfiguration' | 'UpdateFirmware' |
+  -- 'GetDiagnostics' | 'SendLocalList' | 'SetChargingProfile' |
+  -- 'ClearChargingProfile' | 'TriggerMessage' | 'UnlockConnector' | 'ClearCache'
   payload         JSONB NOT NULL,
-  status          TEXT DEFAULT 'pending',   -- 'pending' | 'sent' | 'accepted' | 'rejected' | 'error' | 'timeout'
+  status          TEXT DEFAULT 'pending',  -- 'pending'|'sent'|'accepted'|'rejected'|'error'|'timeout'
   response        JSONB,
-  created_by      UUID REFERENCES user_profiles(id),
+  created_by      BIGINT REFERENCES user_profiles(id),
   created_at      TIMESTAMPTZ DEFAULT now(),
   sent_at         TIMESTAMPTZ,
   responded_at    TIMESTAMPTZ,
   expires_at      TIMESTAMPTZ DEFAULT (now() + INTERVAL '5 minutes')
 );
 
--- OCPP message log (all messages in/out)
+-- OCPP message log (all messages in/out, raw)
 CREATE TABLE ocpp_messages (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  charge_point_id TEXT,
+  id              BIGSERIAL PRIMARY KEY,
+  tenant_id       BIGINT NOT NULL REFERENCES tenants(id),
+  charger_id      BIGINT REFERENCES chargers(id),
   direction       TEXT NOT NULL,    -- 'inbound' | 'outbound'
   message_type    INTEGER,          -- 2=Call, 3=CallResult, 4=CallError
   message_id      TEXT,
   action          TEXT,
   payload         JSONB,
-  ocpp_protocol   TEXT DEFAULT 'ocpp1.6',
+  ocpp_protocol   TEXT DEFAULT 'ocpp1.6j',
   created_at      TIMESTAMPTZ DEFAULT now()
 );
-CREATE INDEX idx_ocpp_messages_cp ON ocpp_messages(charge_point_id, created_at DESC);
+CREATE INDEX idx_ocpp_messages_charger ON ocpp_messages(charger_id, created_at DESC);
 
--- Config key store (last known values per charger)
+-- Config key store (last known GetConfiguration values per charger)
 CREATE TABLE charger_config_keys (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  charge_point_id TEXT REFERENCES ocpp_chargers(charge_point_id) ON DELETE CASCADE,
+  id              BIGSERIAL PRIMARY KEY,
+  tenant_id       BIGINT NOT NULL REFERENCES tenants(id),
+  charger_id      BIGINT NOT NULL REFERENCES chargers(id) ON DELETE CASCADE,
   key             TEXT NOT NULL,
   value           TEXT,
   readonly        BOOLEAN DEFAULT false,
   last_read_at    TIMESTAMPTZ DEFAULT now(),
   last_written_at TIMESTAMPTZ,
-  UNIQUE(charge_point_id, key)
+  UNIQUE(charger_id, key)
 );
 
 -- Alarms / faults
-CREATE TABLE charger_alarms (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  charge_point_id TEXT REFERENCES ocpp_chargers(charge_point_id),
-  connector_id    INTEGER,
-  station_id      UUID REFERENCES stations(id),
-  operator_id     UUID REFERENCES operators(id),
-  -- Fault details
+CREATE TABLE alarms (
+  id              BIGSERIAL PRIMARY KEY,
+  tenant_id       BIGINT NOT NULL REFERENCES tenants(id),
+  charger_id      BIGINT NOT NULL REFERENCES chargers(id),
+  connector_id    BIGINT REFERENCES connectors(id),
+  station_id      BIGINT REFERENCES stations(id),
+  operator_id     BIGINT REFERENCES operators(id),
   error_code      TEXT,
-  error_name      TEXT,             -- Human-readable from error dictionary
+  error_name      TEXT,              -- human-readable from alarm dictionary
   vendor_error    TEXT,
   info            TEXT,
-  status          TEXT,             -- OCPP status at time of fault
-  -- Resolution
+  ocpp_status     TEXT,
+  severity        TEXT DEFAULT 'warning',  -- 'info'|'warning'|'critical'
   is_resolved     BOOLEAN DEFAULT false,
   resolved_at     TIMESTAMPTZ,
-  resolved_by     UUID REFERENCES user_profiles(id),
+  resolved_by     BIGINT REFERENCES user_profiles(id),
   resolution_notes TEXT,
-  -- Notification
   notifications_sent BOOLEAN DEFAULT false,
   created_at      TIMESTAMPTZ DEFAULT now()
 );
@@ -737,32 +753,32 @@ CREATE TABLE charger_alarms (
 ### 2.7 Firmware & Diagnostics Tables
 
 ```sql
--- Firmware packages (stored in Supabase Storage)
+-- Firmware packages (files in Supabase Storage)
 CREATE TABLE firmware_packages (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  operator_id     UUID REFERENCES operators(id),
+  id              BIGSERIAL PRIMARY KEY,
+  tenant_id       BIGINT NOT NULL REFERENCES tenants(id),
+  operator_id     BIGINT REFERENCES operators(id),
   firmware_name   TEXT NOT NULL,
   version         TEXT NOT NULL,
-  firmware_type   TEXT DEFAULT 'NotSecc',   -- 'NotSecc' | 'Secc' | 'All' (from charger firmware)
-  compatible_vendors TEXT[],                -- ['com.cnchargepoint']
-  compatible_models  TEXT[],               -- ['Verde150', 'Verde250']
-  ocpp_protocol   TEXT DEFAULT 'ocpp1.6',
+  firmware_type   TEXT DEFAULT 'NotSecc',   -- 'NotSecc'|'Secc'|'All'
+  compatible_vendors TEXT[],
+  compatible_models  TEXT[],
+  ocpp_protocol   TEXT DEFAULT 'ocpp1.6j',
   file_url        TEXT NOT NULL,
   file_size_bytes BIGINT,
   sha256          TEXT,
   release_notes   TEXT,
-  uploaded_by     UUID REFERENCES user_profiles(id),
+  uploaded_by     BIGINT REFERENCES user_profiles(id),
   created_at      TIMESTAMPTZ DEFAULT now()
 );
 
 -- Firmware update jobs
 CREATE TABLE firmware_update_jobs (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  firmware_id     UUID REFERENCES firmware_packages(id),
-  charge_point_id TEXT REFERENCES ocpp_chargers(charge_point_id),
-  -- Tracking
+  id              BIGSERIAL PRIMARY KEY,
+  tenant_id       BIGINT NOT NULL REFERENCES tenants(id),
+  firmware_id     BIGINT NOT NULL REFERENCES firmware_packages(id),
+  charger_id      BIGINT NOT NULL REFERENCES chargers(id),
   status          TEXT DEFAULT 'pending',
-  -- Status sequence (from FirmwareStatusNotification):
   -- pending → sent → Downloading → Downloaded → Installing → Installed
   -- or: DownloadFailed | InstallationFailed
   ocpp_status     TEXT,
@@ -770,23 +786,23 @@ CREATE TABLE firmware_update_jobs (
   sent_at         TIMESTAMPTZ,
   completed_at    TIMESTAMPTZ,
   error_message   TEXT,
-  created_by      UUID REFERENCES user_profiles(id),
+  created_by      BIGINT REFERENCES user_profiles(id),
   created_at      TIMESTAMPTZ DEFAULT now()
 );
 
 -- Diagnostic log requests
 CREATE TABLE diagnostic_logs (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  charge_point_id TEXT REFERENCES ocpp_chargers(charge_point_id),
-  operator_id     UUID REFERENCES operators(id),
-  -- OCPP DiagnosticsStatusNotification sequence:
+  id              BIGSERIAL PRIMARY KEY,
+  tenant_id       BIGINT NOT NULL REFERENCES tenants(id),
+  charger_id      BIGINT NOT NULL REFERENCES chargers(id),
+  operator_id     BIGINT REFERENCES operators(id),
   -- requested → Uploading → Uploaded | UploadFailed
   status          TEXT DEFAULT 'requested',
   ocpp_status     TEXT,
   filename        TEXT,
-  file_url        TEXT,                      -- Supabase Storage URL
+  file_url        TEXT,
   file_size_bytes BIGINT,
-  requested_by    UUID REFERENCES user_profiles(id),
+  requested_by    BIGINT REFERENCES user_profiles(id),
   requested_at    TIMESTAMPTZ DEFAULT now(),
   received_at     TIMESTAMPTZ
 );
@@ -2450,10 +2466,14 @@ CREATE TABLE stations (
 );
 
 -- RLS policy (identical pattern on every table):
+-- Uses current_tenant_id() which reads the integer tenant_id from the JWT claim.
+-- No UUID lookups at RLS evaluation time.
 ALTER TABLE stations ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "tenant_isolation" ON stations
-  USING (tenant_id = (SELECT tenant_id FROM user_profiles WHERE id = auth.uid()));
+  USING (tenant_id = current_tenant_id());
+  -- current_tenant_id() returns BIGINT from JWT claim 'tenant_id'
+  -- injected at login via Supabase Auth custom access token hook
 ```
 
 ### 17.2 Tenant Table
@@ -2519,14 +2539,45 @@ Role Hierarchy:
 ```sql
 CREATE TABLE user_profiles (
   id          BIGSERIAL PRIMARY KEY,
-  auth_id     UUID UNIQUE NOT NULL REFERENCES auth.users(id),
-  tenant_id   BIGINT REFERENCES tenants(id),   -- NULL for super_admin
+
+  -- auth_uid is TEXT (not UUID type) — stores the Supabase Auth internal user ID.
+  -- Supabase Auth generates this as a UUID string internally; we store it as TEXT
+  -- so our schema has ZERO UUID-typed columns. This column is only used for the
+  -- auth.uid() lookup bridge; it is NEVER shown in the UI or used in reports.
+  -- All application logic uses the integer `id` column exclusively.
+  auth_uid    TEXT UNIQUE NOT NULL,
+
+  tenant_id   BIGINT REFERENCES tenants(id),   -- NULL for super_admin only
   role        TEXT NOT NULL,  -- 'super_admin' | 'tenant_admin' | 'station_manager' | 'officer' | 'customer'
   full_name   TEXT,
   phone       TEXT,
   is_approved BOOLEAN DEFAULT false,
   created_at  TIMESTAMPTZ DEFAULT now()
 );
+
+-- RLS helper: get current user's integer profile id from JWT claim
+-- (injected by Supabase Auth hook, avoids table lookup on every RLS check)
+CREATE OR REPLACE FUNCTION current_user_id() RETURNS BIGINT LANGUAGE sql STABLE AS $$
+  SELECT (current_setting('request.jwt.claims', true)::jsonb->>'user_id')::bigint;
+$$;
+
+CREATE OR REPLACE FUNCTION current_tenant_id() RETURNS BIGINT LANGUAGE sql STABLE AS $$
+  SELECT (current_setting('request.jwt.claims', true)::jsonb->>'tenant_id')::bigint;
+$$;
+
+-- Auto-create profile on new Supabase Auth user sign-up
+CREATE OR REPLACE FUNCTION create_user_profile()
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+  INSERT INTO user_profiles (auth_uid, role, is_approved)
+  VALUES (NEW.id::TEXT, 'customer', false);
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION create_user_profile();
 ```
 
 ---
@@ -2745,20 +2796,41 @@ Super-Admin Panel:
 
 ## Part 20: Database Design — Integer IDs
 
-### 20.1 Why Integer IDs (BIGSERIAL) Instead of UUIDs
+### 20.1 Why Integer IDs (BIGSERIAL) Instead of UUIDs — And Why No UUID Type At All
 
 | Factor | UUID | BIGSERIAL (Integer) |
 |---|---|---|
 | **Readability** | `a3f5-bc12-...` hard to remember | `1042` easy for support tickets |
-| **Storage** | 16 bytes | 8 bytes (50% smaller) |
+| **Storage** | 16 bytes per column | 8 bytes (50% smaller) |
 | **Index size** | Large B-tree | Compact, cache-friendly |
-| **Join performance** | Slower (larger comparisons) | Faster integer joins |
+| **Join performance** | Slower (128-bit comparisons) | Fastest (64-bit integer) |
 | **URL friendliness** | `/sessions/a3f5bc12-...` | `/sessions/1042` |
-| **OCPP compatibility** | Must stringify for OCPP | Native int, stringify when needed |
-| **Distributed generation** | No DB needed | Sequential, needs DB |
-| **Tenant isolation** | UUIDs hard to guess (minor security) | RLS handles isolation, IDs not secret |
+| **OCPP compatibility** | Must stringify | Native int, stringify if needed |
+| **Tenant isolation** | Not relevant — RLS handles this | RLS + integer tenant_id |
+| **Debugging** | Hard to track `a3f5bc12` in logs | Easy: `session_id=1042` |
 
-**Decision: Use `BIGSERIAL` for all primary keys.** Tenant isolation is enforced by RLS, not by obscure IDs.
+**Decision: BIGSERIAL everywhere. Zero UUID column types in this database.**
+
+#### The One Special Case: `user_profiles.auth_uid TEXT`
+
+Supabase Auth's internal `auth.users` table uses UUIDs for its own user records — this is Supabase's system and we cannot change it. We must store a reference to it so we can look up a user's profile after they log in.
+
+**Solution:** Store it as `TEXT`, not as the Postgres `UUID` type:
+
+```sql
+auth_uid  TEXT UNIQUE NOT NULL   -- stores "a3f5bc12-..." as a plain string
+-- NOT:
+auth_uid  UUID UNIQUE NOT NULL   -- this would be a UUID-typed column — NOT ALLOWED
+```
+
+**Why TEXT is fine here:**
+- We only ever use `auth_uid` in a single lookup: `WHERE auth_uid = auth.uid()::text`
+- After that lookup we get the integer `user_profiles.id` and use it everywhere
+- We inject `user_id` (integer) and `tenant_id` (integer) into the JWT via Supabase Auth hooks
+- All RLS policies use `current_user_id()` and `current_tenant_id()` — both return `BIGINT`
+- `auth_uid` is **never exposed in the UI, never in URLs, never in reports**
+
+This means: **our schema has zero `UUID` typed columns.** Every PK and FK is an integer.
 
 ### 20.2 Core Schema with Integer IDs
 
@@ -2775,7 +2847,7 @@ CREATE TABLE tenants (
 -- ─── USERS ──────────────────────────────────────────────────────────────────
 CREATE TABLE user_profiles (
   id            BIGSERIAL PRIMARY KEY,
-  auth_id       UUID UNIQUE NOT NULL,  -- Supabase Auth still uses UUID (keep as FK to auth.users)
+  auth_uid      TEXT UNIQUE NOT NULL,  -- Supabase Auth ID stored as TEXT (no UUID type anywhere)
   tenant_id     BIGINT NOT NULL REFERENCES tenants(id),
   role          TEXT NOT NULL,
   full_name     TEXT,
@@ -3304,7 +3376,7 @@ Phase 0.1 — Infrastructure Setup (Day 1)
 
 Phase 0.2 — Database Foundation (Day 1-2)
   ✓ Apply migration 0001: tenants, subscription_plans
-  ✓ Apply migration 0002: user_profiles (integer id + UUID auth_id)
+  ✓ Apply migration 0002: user_profiles (BIGSERIAL id + TEXT auth_uid, NO UUID type)
   ✓ Apply migration 0003: tenant_branding, supported_currencies
   ✓ Apply migration 0004: stations, chargers, connectors
   ✓ Apply migration 0005: tariffs, rfid_cards
