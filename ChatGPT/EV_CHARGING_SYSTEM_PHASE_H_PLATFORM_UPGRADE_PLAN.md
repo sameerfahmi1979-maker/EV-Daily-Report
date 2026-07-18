@@ -1473,7 +1473,23 @@ When a brand new charger connects for the first time:
 - Action buttons: Remote Stop (if charging), Remote Start, Unlock Connector
 - Color: green=Available, blue=Charging, gray=Offline, red=Faulted, orange=Reserved
 
-#### H1.3 — Statistics Panel
+#### H1.3 — Main Dashboard Layout (ChargeCore-Style)
+- **5 KPI cards** (top row): Total Energy, Total Sessions, Total Revenue, CO₂ Saved, Trees Equivalent
+  - Each card shows **all-time total** + **Today sub-value** in smaller text below
+  - Live updates via Supabase Realtime — no refresh
+- **Quick Nav icon bar**: 8 shortcut icons to main sections (Connect station, Sessions, Stations, Fees, Connectors, Alarms, RFID, Reports)
+- **Transaction area chart**: Energy/Sessions/Revenue over time with Day/Week/Month/Year toggle + CSV/PNG export
+  - Smooth gradient area fill (Recharts AreaChart), powered by `get_transaction_timeseries()` RPC
+- **Connector Status donut chart**: Live distribution of Idle / Charging / Plugged / Unavailable / Faulted / Offline
+  - Updates instantly when any connector changes status via Realtime
+- **Alarm Events panel** (last 30 days): Top alarm codes with human-readable description and occurrence count
+  - Color-coded counts: red > 10, orange > 3, gray otherwise
+- **Station Map** (full-width): Google Maps with colored pins per station (green=available, blue=charging, red=faulted, gray=offline)
+  - Map/Satellite toggle, fullscreen button, legend
+  - Click pin → station popup (name, address, charger count, active sessions, "View Station" link)
+  - Pin colors update live via Supabase Realtime connector status changes
+
+#### H1.3B — Statistics Panel
 - Three area charts: Energy / Revenue / Sessions
 - Date granularity: Day / Week / Month / Year
 - Drill-down table below: by Station / by Charger / by Operator
@@ -2678,78 +2694,526 @@ import { LineChart } from 'react-native-gifted-charts';
 
 All variants share the same `SessionMeterChart` component with different `filter` and `window` props.
 
-### 15.4 Dashboard KPI Auto-Refresh
+### 15.4 Dashboard KPI Cards — Full & Today Values
 
-KPI cards use a hybrid approach: Realtime for incremental updates, full refresh every 60 seconds as a safety net:
+**Reference (ChargeCore):** 5 top-row KPI cards each showing an all-time total AND a "Today" sub-value:
+- Total Energy (kWh) / Today Energy
+- Total Sessions / Today Sessions
+- Total Revenue / Today Revenue (split by payment type: cash recharge count)
+- CO₂ Consumed (kg) / Today CO₂
+- CO₂ Trees Equivalent (cumulative) — gamification metric
 
 ```typescript
 // src/components/dashboard/KpiCards.tsx
 
-const KpiCards = () => {
-  const [kpis, setKpis] = useState<DashboardKpis>(initialKpis);
+interface KpiCardData {
+  allTime: number;
+  today:   number;
+  label:   string;
+  subLabel: string;       // e.g. "Today: 500.01 kWh"
+  icon:    ReactNode;
+  color:   string;
+  trend?:  'up' | 'down'; // vs yesterday
+}
 
-  // Realtime: increment on new session or billing record
-  useRealtimeKpiUpdates(setKpis);
+const KPI_CARDS: KpiCardData[] = [
+  {
+    label: 'Total Energy',       subLabel: 'Today Energy',
+    allTime: kpis.totalEnergyKwh, today: kpis.todayEnergyKwh,
+    icon: <Zap/>,          color: 'blue',
+  },
+  {
+    label: 'Total Sessions',     subLabel: 'Today Sessions',
+    allTime: kpis.totalSessions,  today: kpis.todaySessions,
+    icon: <Activity/>,     color: 'indigo',
+  },
+  {
+    label: 'Total Revenue',      subLabel: `Today Revenue · Recharge: ${kpis.todayRechargeCount}`,
+    allTime: kpis.totalRevenue,   today: kpis.todayRevenue,
+    icon: <DollarSign/>,   color: 'green',
+  },
+  {
+    label: 'CO₂ Saved (kg)',     subLabel: 'Today CO₂',
+    allTime: kpis.totalCo2Kg,     today: kpis.todayCo2Kg,
+    icon: <Leaf/>,         color: 'emerald',
+    // Calculated: kWh × 0.7 (IPCC average grid emission factor)
+  },
+  {
+    label: 'Trees Equivalent',   subLabel: 'Cumulative',
+    allTime: kpis.treesEquivalent, today: null,
+    icon: <TreePine/>,     color: 'teal',
+    // Calculated: totalCo2Kg / 21 (avg CO₂ absorbed per tree per year)
+  },
+];
 
-  // Safety net: full refresh every 60 seconds
-  useEffect(() => {
-    const interval = setInterval(refreshKpisFromDb, 60_000);
-    return () => clearInterval(interval);
-  }, []);
+// KPI values update via Supabase Realtime (no refresh needed):
+// - New session INSERT → increment today sessions
+// - billing_records UPDATE (payment_status=paid) → increment today revenue
+// - sessions UPDATE (status=completed) → add energy to today total
+// - Full DB sync every 60 seconds as safety net
+```
+
+### 15.5 Transaction Time-Series Area Chart
+
+**Reference (ChargeCore):** Large area chart on the dashboard showing sessions/energy over time. Supports day/week/month/year granularity. Smooth area fill.
+
+```typescript
+// src/components/dashboard/TransactionChart.tsx
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+
+const GRANULARITIES = [
+  { label: 'Day',   value: 'day',   tickFormat: 'HH:mm' },
+  { label: 'Week',  value: 'week',  tickFormat: 'ddd DD' },
+  { label: 'Month', value: 'month', tickFormat: 'DD MMM' },
+  { label: 'Year',  value: 'year',  tickFormat: 'MMM YY' },
+];
+
+const TransactionChart = () => {
+  const [granularity, setGranularity] = useState<'day'|'week'|'month'|'year'>('month');
+  const [metric, setMetric] = useState<'sessions'|'energy'|'revenue'>('sessions');
+
+  // Data from RPC that aggregates billing_records grouped by time bucket
+  const { data } = useQuery(['transaction-chart', granularity, metric], () =>
+    supabase.rpc('get_transaction_timeseries', { granularity, metric })
+  );
 
   return (
-    <div className="grid grid-cols-4 gap-4">
-      <KpiCard title="Total Energy Today" value={formatEnergy(kpis.energyWh)} icon={<Zap/>} trend={kpis.energyTrend} />
-      <KpiCard title="Sessions Today"     value={kpis.sessionCount}           icon={<Activity/>} trend={kpis.sessionTrend} />
-      <KpiCard title="Revenue Today"      value={formatAmount(kpis.revenue)}  icon={<DollarSign/>} trend={kpis.revenueTrend} />
-      <KpiCard title="CO₂ Avoided"        value={formatCo2(kpis.energyWh)}   icon={<Leaf/>} />
-      {/* Charger status summary */}
-      <KpiCard title="Online Chargers"    value={`${kpis.onlineCount} / ${kpis.totalCount}`} icon={<Wifi/>} color={kpis.onlineCount > 0 ? 'green' : 'red'} />
-      <KpiCard title="Active Sessions"    value={kpis.activeSessionCount}     icon={<BatteryCharging/>} color="blue" />
-      <KpiCard title="Faulted"            value={kpis.faultedCount}           icon={<AlertTriangle/>} color={kpis.faultedCount > 0 ? 'red' : 'green'} />
-      <KpiCard title="Unresolved Alarms"  value={kpis.unresolvedAlarmCount}   icon={<Bell/>}  color={kpis.unresolvedAlarmCount > 0 ? 'orange' : 'green'} />
+    <div className="bg-white rounded-xl p-4 shadow-sm">
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="font-semibold text-gray-700">Transaction Overview</h3>
+        <div className="flex gap-2">
+          {/* Metric toggle: Sessions / Energy / Revenue */}
+          <SegmentedControl options={['Sessions','Energy','Revenue']} onChange={setMetric} />
+          {/* Granularity: Day / Week / Month / Year */}
+          <SegmentedControl options={GRANULARITIES.map(g=>g.label)} onChange={setGranularity} />
+          {/* Export buttons */}
+          <Button size="xs" variant="ghost" onClick={exportCsv}><Download size={14}/></Button>
+          <Button size="xs" variant="ghost" onClick={exportPng}><Image size={14}/></Button>
+        </div>
+      </div>
+
+      <ResponsiveContainer width="100%" height={200}>
+        <AreaChart data={data}>
+          <defs>
+            <linearGradient id="colorSessions" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%"  stopColor="#3B82F6" stopOpacity={0.3}/>
+              <stop offset="95%" stopColor="#3B82F6" stopOpacity={0}/>
+            </linearGradient>
+          </defs>
+          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0"/>
+          <XAxis dataKey="bucket" tick={{fontSize:11}} />
+          <YAxis tick={{fontSize:11}} width={40}/>
+          <Tooltip />
+          <Legend />
+          <Area
+            type="monotone"
+            dataKey="value"
+            stroke="#3B82F6"
+            fill="url(#colorSessions)"
+            strokeWidth={2}
+            dot={false}
+          />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
+};
+
+-- Supporting RPC in Postgres:
+CREATE OR REPLACE FUNCTION get_transaction_timeseries(
+  p_granularity TEXT,   -- 'day' | 'week' | 'month' | 'year'
+  p_metric      TEXT,   -- 'sessions' | 'energy' | 'revenue'
+  p_tenant_id   BIGINT DEFAULT current_tenant_id()
+) RETURNS TABLE (bucket TIMESTAMPTZ, value NUMERIC) LANGUAGE sql STABLE AS $$
+  SELECT
+    date_trunc(p_granularity, created_at) AS bucket,
+    CASE p_metric
+      WHEN 'sessions' THEN COUNT(*)::NUMERIC
+      WHEN 'energy'   THEN SUM(energy_kwh)
+      WHEN 'revenue'  THEN SUM(total_amount)
+    END AS value
+  FROM billing_records
+  WHERE tenant_id = p_tenant_id
+  GROUP BY 1
+  ORDER BY 1;
+$$;
+```
+
+### 15.6 Connector Status Donut Chart
+
+**Reference (ChargeCore):** A donut chart on the main dashboard showing the distribution of all connectors by their current status. Updates live.
+
+```typescript
+// src/components/dashboard/ConnectorStatusDonut.tsx
+import { PieChart, Pie, Cell, Tooltip, Legend } from 'recharts';
+
+const STATUS_COLORS = {
+  Idle:          '#22C55E',  // green
+  Charging:      '#3B82F6',  // blue
+  Plugged:       '#60A5FA',  // light blue
+  Unavailable:   '#9CA3AF',  // gray
+  Faulted:       '#EF4444',  // red
+  Offline:       '#374151',  // dark gray
+  Reserved:      '#F59E0B',  // amber
+};
+
+const ConnectorStatusDonut = () => {
+  // Loaded from DB, updated via Supabase Realtime (connectors UPDATE)
+  const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
+
+  useRealtimeConnectorStatus((updated) => {
+    // Recalculate distribution when any connector changes status
+    setStatusCounts(recalculate(updated));
+  });
+
+  const data = Object.entries(statusCounts).map(([status, count]) => ({
+    name: status, value: count, color: STATUS_COLORS[status] ?? '#CBD5E1'
+  }));
+
+  const total = data.reduce((s, d) => s + d.value, 0);
+
+  return (
+    <div className="bg-white rounded-xl p-4 shadow-sm">
+      <h3 className="font-semibold text-gray-700 mb-3">Connector Status</h3>
+      <div className="flex items-center gap-4">
+        <PieChart width={140} height={140}>
+          <Pie data={data} cx={65} cy={65} innerRadius={45} outerRadius={65} dataKey="value" strokeWidth={2}>
+            {data.map((entry) => <Cell key={entry.name} fill={entry.color}/>)}
+          </Pie>
+          <Tooltip formatter={(v, n) => [`${v} (${((v/total)*100).toFixed(0)}%)`, n]}/>
+        </PieChart>
+        {/* Legend */}
+        <div className="flex flex-col gap-1 text-xs">
+          {data.map(d => (
+            <div key={d.name} className="flex items-center gap-2">
+              <div className="w-2.5 h-2.5 rounded-full" style={{background: d.color}}/>
+              <span className="text-gray-600">{d.name}</span>
+              <span className="font-bold ml-auto">{d.value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 };
 ```
 
-### 15.5 Charger Status Summary Widget
+### 15.7 Alarm Events Panel (Last 30 Days)
 
-A mini-grid shown on the dashboard showing all chargers with live status dots:
+**Reference (ChargeCore):** A panel on the dashboard showing recent alarm events with alarm code, description, and count. Links to full alarm management page.
 
 ```typescript
-// src/components/dashboard/ChargerStatusGrid.tsx
-// Shows a compact grid: one dot per charger, colored by status
-// Click → opens full ConnectorMonitor for that charger
-// Updates in real-time via Supabase Realtime (no refresh)
+// src/components/dashboard/AlarmEventsPanel.tsx
 
-// Status dot legend:
-// 🟢 Online + All Available
-// 🔵 Online + Charging (number shown: how many active sessions)
-// 🟡 Online + Partially unavailable
-// 🔴 Faulted
-// ⚫ Offline
+const AlarmEventsPanel = () => {
+  // Load alarms from last 30 days, grouped by error_code, ordered by count desc
+  const { data: alarms } = useQuery('recent-alarms', () =>
+    supabase.rpc('get_alarm_summary_30d', { tenant_id: currentTenantId })
+  );
+
+  return (
+    <div className="bg-white rounded-xl p-4 shadow-sm">
+      <div className="flex justify-between items-center mb-3">
+        <h3 className="font-semibold text-gray-700">Alarm Events (Last 30 days)</h3>
+        <Link to="/alarms" className="text-xs text-blue-500">View all →</Link>
+      </div>
+
+      <div className="space-y-1">
+        {alarms?.map(alarm => (
+          <div key={alarm.error_code} className="flex items-center justify-between text-xs py-1 border-b last:border-0">
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-gray-400 w-16">{alarm.error_code}</span>
+              <span className="text-gray-600 truncate max-w-48">{alarm.human_description}</span>
+            </div>
+            <span className={`px-2 py-0.5 rounded text-white text-xs ${
+              alarm.count > 10 ? 'bg-red-500' :
+              alarm.count > 3  ? 'bg-orange-400' :
+              'bg-gray-400'
+            }`}>
+              {alarm.count}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+-- Postgres RPC:
+CREATE OR REPLACE FUNCTION get_alarm_summary_30d(p_tenant_id BIGINT DEFAULT current_tenant_id())
+RETURNS TABLE (error_code TEXT, human_description TEXT, count BIGINT)
+LANGUAGE sql STABLE AS $$
+  SELECT error_code, MAX(error_name) AS human_description, COUNT(*) AS count
+  FROM alarms
+  WHERE tenant_id = p_tenant_id
+    AND created_at >= now() - INTERVAL '30 days'
+  GROUP BY error_code
+  ORDER BY count DESC
+  LIMIT 20;
+$$;
 ```
 
-### 15.6 Live Notification System
+### 15.8 Station Map with Live Pins
+
+**Reference (ChargeCore):** Full-width Google Map showing all stations as colored map markers. Pin color reflects live status. Map/Satellite toggle. Fullscreen button. Station popup on pin click.
+
+```typescript
+// src/components/dashboard/StationMap.tsx
+// Web: @react-google-maps/api
+// Mobile: react-native-maps
+
+// Pin colors by station health:
+const STATION_PIN_COLOR = (station: StationWithChargers): string => {
+  const connectors = station.chargers.flatMap(c => c.connectors);
+  if (connectors.every(c => c.status === 'Unavailable' || c.status === 'Offline'))
+    return '#374151';  // all offline → dark gray
+  if (connectors.some(c => c.status === 'Faulted'))
+    return '#EF4444';  // any fault → red
+  if (connectors.some(c => c.status === 'Charging'))
+    return '#3B82F6';  // any charging → blue
+  if (connectors.every(c => c.status === 'Available' || c.status === 'Idle'))
+    return '#22C55E';  // all available → green
+  return '#F59E0B';    // mixed → amber
+};
+
+// Map legend (shown bottom-left of map):
+const MAP_LEGEND = [
+  { color: '#22C55E', label: 'Available' },
+  { color: '#3B82F6', label: 'Charging' },
+  { color: '#F59E0B', label: 'Partially Available' },
+  { color: '#EF4444', label: 'Faulted' },
+  { color: '#374151', label: 'Offline' },
+];
+
+const StationMap = () => {
+  const [mapType, setMapType] = useState<'roadmap'|'satellite'>('roadmap');
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [selectedStation, setSelectedStation] = useState<Station | null>(null);
+
+  // Stations update via Supabase Realtime — pin color changes when connector status changes
+  const { stations } = useRealtimeStationStatus();
+
+  return (
+    <div className={`relative rounded-xl overflow-hidden ${isFullscreen ? 'fixed inset-0 z-50' : 'h-80'}`}>
+
+      {/* Map/Satellite toggle */}
+      <div className="absolute top-2 left-2 z-10 flex gap-1 bg-white rounded shadow">
+        <button onClick={() => setMapType('roadmap')}
+          className={`px-3 py-1 text-xs ${mapType==='roadmap' ? 'bg-blue-500 text-white' : 'text-gray-600'}`}>
+          Map
+        </button>
+        <button onClick={() => setMapType('satellite')}
+          className={`px-3 py-1 text-xs ${mapType==='satellite' ? 'bg-blue-500 text-white' : 'text-gray-600'}`}>
+          Satellite
+        </button>
+      </div>
+
+      {/* Fullscreen toggle */}
+      <button onClick={() => setIsFullscreen(!isFullscreen)}
+        className="absolute top-2 right-2 z-10 bg-white rounded shadow p-1">
+        {isFullscreen ? <Minimize2 size={16}/> : <Maximize2 size={16}/>}
+      </button>
+
+      {/* Map legend */}
+      <div className="absolute bottom-2 left-2 z-10 bg-white rounded shadow p-2 text-xs space-y-1">
+        {MAP_LEGEND.map(item => (
+          <div key={item.label} className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full" style={{background: item.color}}/>
+            <span>{item.label}</span>
+          </div>
+        ))}
+      </div>
+
+      <GoogleMap
+        mapContainerStyle={{ width: '100%', height: '100%' }}
+        zoom={10}
+        mapTypeId={mapType}
+        options={{ streetViewControl: false, mapTypeControl: false }}
+      >
+        {stations.map(station => (
+          <Marker
+            key={station.id}
+            position={{ lat: station.lat, lng: station.lng }}
+            icon={{
+              path: google.maps.SymbolPath.CIRCLE,
+              scale: 10,
+              fillColor: STATION_PIN_COLOR(station),
+              fillOpacity: 1,
+              strokeColor: '#fff',
+              strokeWeight: 2,
+            }}
+            onClick={() => setSelectedStation(station)}
+          />
+        ))}
+
+        {/* Station popup on pin click */}
+        {selectedStation && (
+          <InfoWindow
+            position={{ lat: selectedStation.lat, lng: selectedStation.lng }}
+            onCloseClick={() => setSelectedStation(null)}
+          >
+            <StationMapPopup station={selectedStation} />
+          </InfoWindow>
+        )}
+      </GoogleMap>
+    </div>
+  );
+};
+
+// Station popup content:
+// - Station name
+// - Address
+// - Total chargers / Online chargers
+// - Active sessions count
+// - "View Station →" link
+```
+
+### 15.9 Full Dashboard Page Layout
+
+**Reference (ChargeCore):** The complete dashboard page layout combining all widgets:
+
+```typescript
+// src/pages/Dashboard.tsx
+
+const Dashboard = () => (
+  <div className="space-y-6 p-6">
+
+    {/* Row 1: 5 KPI cards */}
+    <div className="grid grid-cols-5 gap-4">
+      {KPI_CARDS.map(card => <KpiCard key={card.label} {...card} />)}
+    </div>
+
+    {/* Row 2: Quick nav icon links */}
+    <QuickNavBar links={[
+      { label: 'Connect a station',   icon: <Plug/>,         to: '/stations/add' },
+      { label: 'Sessions',            icon: <Activity/>,     to: '/sessions' },
+      { label: 'Charging stations',   icon: <MapPin/>,       to: '/stations' },
+      { label: 'Charge fees',         icon: <DollarSign/>,   to: '/tariffs' },
+      { label: 'Connectors',          icon: <Zap/>,          to: '/monitor' },
+      { label: 'Status notification', icon: <Bell/>,         to: '/alarms' },
+      { label: 'Charging card',       icon: <CreditCard/>,   to: '/rfid' },
+      { label: 'Charging energy',     icon: <BarChart2/>,    to: '/reports' },
+    ]} />
+
+    {/* Row 3: Area chart + 2 side panels */}
+    <div className="grid grid-cols-3 gap-4">
+      <div className="col-span-2">
+        <TransactionChart />
+      </div>
+      <div className="space-y-4">
+        <ConnectorStatusDonut />
+        <AlarmEventsPanel />
+      </div>
+    </div>
+
+    {/* Row 4: Station map (full width) */}
+    <StationMap />
+
+  </div>
+);
+```
+
+### 15.10 Idle Connector Card Styling
+
+**Reference (ChargeCore image):** Idle connector cards have distinct visual treatment vs charging cards:
+
+```typescript
+// Connector card border color by status:
+const CARD_BORDER_COLOR = {
+  Charging:    'border-blue-400  bg-blue-50',    // blue border + light blue bg
+  Preparing:   'border-blue-300  bg-blue-50',
+  Available:   'border-green-400 bg-green-50',   // green border + light green bg
+  Idle:        'border-green-400 bg-green-50',   // same as Available
+  Faulted:     'border-red-400   bg-red-50',
+  Unavailable: 'border-gray-300  bg-gray-50',
+  Offline:     'border-gray-400  bg-gray-100',
+  Reserved:    'border-orange-400 bg-orange-50',
+};
+
+// Bottom action bar — icons differ by status:
+const CARD_ACTIONS = {
+  Idle: [
+    { icon: <Play size={14}/>,   label: 'Remote Start',    action: 'remote_start'    },
+    { icon: <Clock size={14}/>,  label: 'Schedule',        action: 'schedule_charge' },
+    { icon: <XCircle size={14}/>,label: 'Cancel/Reserve',  action: 'clear_reserve'   },
+  ],
+  Charging: [
+    { icon: <Square size={14}/>, label: 'Remote Stop',     action: 'remote_stop'     },
+    { icon: <Unlock size={14}/>, label: 'Unlock Connector',action: 'unlock'          },
+    { icon: <XCircle size={14}/>,label: 'Cancel',          action: 'cancel'          },
+  ],
+  Faulted: [
+    { icon: <RefreshCw size={14}/>, label: 'Reset Charger', action: 'reset'          },
+    { icon: <Unlock size={14}/>,    label: 'Unlock',        action: 'unlock'         },
+    { icon: <Bell size={14}/>,      label: 'Acknowledge',   action: 'ack_alarm'      },
+  ],
+};
+
+// Status badge (bottom-left of card):
+const StatusBadge = ({ status }: { status: string }) => {
+  const colors = {
+    Charging:    'text-blue-600',
+    Idle:        'text-green-600',
+    Available:   'text-green-600',
+    Faulted:     'text-red-600',
+    Unavailable: 'text-gray-500',
+    Offline:     'text-gray-600',
+    Plugged:     'text-blue-400',
+  };
+  return (
+    <span className={`text-xs font-medium flex items-center gap-1 ${colors[status]}`}>
+      <span className={`w-2 h-2 rounded-full inline-block ${
+        status === 'Charging' ? 'bg-blue-500 animate-pulse' :
+        status === 'Idle' || status === 'Available' ? 'bg-green-500' :
+        status === 'Faulted' ? 'bg-red-500 animate-pulse' :
+        'bg-gray-400'
+      }`}/>
+      {status}
+    </span>
+  );
+};
+```
+
+### 15.11 Schedule Charge Feature
+
+**Reference (ChargeCore):** The ⏰ "Schedule" button on an idle connector card. Allows booking a future remote start.
+
+```typescript
+// Scheduled command: InsertRow in remote_commands with future execute_at
+interface ScheduleChargePayload {
+  connector_id:   number;
+  id_tag:         string;      // RFID tag to authorize
+  execute_at:     string;      // ISO datetime when to send RemoteStart
+  duration_limit: number;      // max minutes (0 = unlimited)
+  energy_limit:   number;      // max kWh (0 = unlimited)
+}
+
+// DB table extension for scheduled commands:
+ALTER TABLE remote_commands ADD COLUMN IF NOT EXISTS execute_at TIMESTAMPTZ;
+ALTER TABLE remote_commands ADD COLUMN IF NOT EXISTS is_scheduled BOOLEAN DEFAULT false;
+
+-- Edge Function: runs every minute, finds due scheduled commands, sends them
+-- supabase/functions/process-scheduled-commands/index.ts
+```
+
+### 15.12 Live Notification System
 
 ```typescript
 // src/components/layout/NotificationBell.tsx
 
-// Realtime events that generate in-app notifications:
 const NOTIFICATION_EVENTS = [
-  { table: 'ocpp_chargers',         filter: 'connection_status',  type: 'charger_status' },
-  { table: 'charger_alarms',        event: 'INSERT',              type: 'new_alarm'       },
-  { table: 'ocpp_charging_sessions',event: 'INSERT',              type: 'session_started' },
-  { table: 'shift_instances',       filter: 'status=eq.closing',  type: 'handover_ready' },
-  { table: 'ocpp_chargers',         filter: 'auto_discovered=true',type: 'new_charger'   },
+  { table: 'chargers',   filter: 'connection_status', type: 'charger_status'  },
+  { table: 'alarms',     event: 'INSERT',             type: 'new_alarm'       },
+  { table: 'sessions',   event: 'INSERT',             type: 'session_started' },
+  { table: 'shifts',     filter: 'status=eq.closing', type: 'handover_ready'  },
+  { table: 'chargers',   filter: 'auto_discovered=eq.true', type: 'new_charger' },
 ];
 
-// Notification types and their display:
+// Notification display:
 // charger_status:  "Charger 244801000001 went offline" [red]
-// new_alarm:       "FAULT: Emergency Stop on Station A / Charger 1" [red, persistent]
-// session_started: "New session on Station B / Gun 2 — RFID: A3F5..." [blue]
-// handover_ready:  "Your shift has ended. Submit cash handover." [orange, action button]
+// new_alarm:       "FAULT: Emergency Stop on Station EIN AL BASHA" [red, persistent]
+// session_started: "New session on EIN AL BASHA / Gun 2 — RFID: A3F5..." [blue]
+// handover_ready:  "Your shift has ended. Submit cash handover." [orange, action]
 // new_charger:     "New charger discovered: com.cnchargepoint / Verde150" [purple]
 ```
 
