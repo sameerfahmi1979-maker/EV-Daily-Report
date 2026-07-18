@@ -1479,7 +1479,18 @@ When a brand new charger connects for the first time:
 - Drill-down table below: by Station / by Charger / by Operator
 - Export each chart and table as CSV or PNG
 
-#### H1.4 — Real-Time Dashboard (Zero Polling)
+#### H1.4 — Live Session Meter Charts (ChargeCore-Style)
+- One chart per active connector card — plots Power (kW), Current (A), Voltage (V), SOC (%) over session time
+- Chart loads historical `meter_values` rows on card mount, then streams new points via Supabase Realtime
+- Built with Recharts `LineChart`, `isAnimationActive={false}` for smooth live streaming
+- Sliding window of last 50 points on dashboard cards; full session history in detail view
+- Measurands merged by timestamp: 4 separate DB rows per interval → 1 chart data point
+- "Not charging" placeholder when connector is idle (magnifying glass, matching ChargeCore UX)
+- Same chart on mobile (Operator App) using `react-native-gifted-charts`
+- DB index `(session_id, measurand, recorded_at ASC)` for fast historical load
+- Chart variants: Live Card, Session Detail, Station Combined Power, Charger Health (7-day)
+
+#### H1.4B — Real-Time Dashboard (Zero Polling)
 - **No manual refresh required** — all status changes arrive via Supabase Realtime WebSocket
 - Charger online/offline: instant toast notification + status dot color change
 - Connector status (Available → Charging → Finishing → Available): live card update
@@ -2249,15 +2260,27 @@ export function useRealtimeDashboard() {
       );
     });
 
-    // 3. Live power/energy during active sessions
+    // 3. Live power/energy during active sessions (summary update)
     channel.on('postgres_changes', {
       event: 'UPDATE',
       schema: 'public',
-      table: 'ocpp_charging_sessions',
+      table: 'sessions',
       filter: 'status=eq.active',
     }, (payload) => {
-      // Update live kW and kWh on the connector card
       updateSessionLiveData(payload.new);
+    });
+
+    // 3b. New meter value point → append to connector card chart
+    // Each connector card subscribes to its OWN session's meter_values independently
+    // (done inside SessionMeterChart component, not in this global channel)
+    // This global channel only tracks connector-level power_kw for the kW badge
+    channel.on('postgres_changes', {
+      event: 'UPDATE',
+      schema: 'public',
+      table: 'connectors',
+    }, (payload) => {
+      // power_kw updated by OCPP server on each MeterValues message
+      updateConnectorLiveKw(payload.new.id, payload.new.power_kw);
     });
 
     // 4. New session started → KPI cards update
@@ -2333,6 +2356,327 @@ const STATUS_CONFIG = {
 // Live kWh display (updates via Realtime subscription)
 // Session elapsed time (local JS timer, no server calls)
 ```
+
+---
+
+### 15.3A Live Session Meter Chart (ChargeCore-Style)
+
+**Reference:** ChargeCore CPMS displays a real-time multi-line chart per connector card showing Power (kW), Current (A), Voltage (V), and SOC (%) plotted over the session duration. This must be replicated exactly.
+
+#### 15.3A.1 Visual Layout of the Connector Card
+
+```
+┌─────────────────────────────────────────────────────┐
+│  [CCS2]  244901000011_1                    📌 🔧 □  │
+│  Operator: Kawar                                     │
+│  Charging Station: EIN AL BASHA                      │
+│                                                      │
+│  ──── Power  ──── Current  ──── Voltage  ──── SOC   │
+│  400 ┤                                               │
+│  300 ┤        ━━━━━━━━━━━━━━━                       │
+│  200 ┤   ━━━━                    ━━━━━━━━━━━━━━━    │
+│  100 ┤                      ━━━━━               ━   │
+│    0 ┼──────────────────────────────────────────    │
+│     13:48:53   13:49:24   13:49:54   13:50:24       │
+│                                                      │
+│  Start Time        Duration        Energy            │
+│  2026-07-18 13:48  00:02:30        1.500 kWh         │
+│                                                      │
+│  ● Charging  [Stop] [Unlock] [Config]                │
+└─────────────────────────────────────────────────────┘
+```
+
+#### 15.3A.2 Data Source
+
+The chart reads from the `meter_values` table. Each row is one data point. The OCPP server writes a new row every time a `MeterValues` message arrives from the charger (every 1–5 seconds when `MeterValueSampleInterval` is set low).
+
+```sql
+-- Query: load historical points for a session on card mount
+SELECT recorded_at, measurand, value, unit
+FROM meter_values
+WHERE session_id = $1
+  AND measurand IN (
+    'Power.Active.Import',
+    'Current.Import',
+    'Voltage',
+    'SoC'
+  )
+ORDER BY recorded_at ASC;
+```
+
+New points arrive via **Supabase Realtime** INSERT subscription on `meter_values`:
+
+```typescript
+// Subscribe to new meter value points for this session
+supabase.channel(`meter-values-${sessionId}`)
+  .on('postgres_changes', {
+    event: 'INSERT',
+    schema: 'public',
+    table: 'meter_values',
+    filter: `session_id=eq.${sessionId}`,
+  }, (payload) => {
+    appendDataPoint(payload.new);  // adds point to chart data array
+  })
+  .subscribe();
+```
+
+#### 15.3A.3 Chart Implementation
+
+```typescript
+// src/components/monitor/SessionMeterChart.tsx
+import { LineChart, Line, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+
+interface MeterPoint {
+  time: string;          // formatted HH:mm:ss
+  power_kw:   number | null;
+  current_a:  number | null;
+  voltage_v:  number | null;
+  soc_pct:    number | null;
+}
+
+const SERIES = [
+  { key: 'power_kw',  label: 'Power (kW)',  color: '#3B82F6', unit: 'kW'  },
+  { key: 'current_a', label: 'Current (A)', color: '#10B981', unit: 'A'   },
+  { key: 'voltage_v', label: 'Voltage (V)', color: '#F59E0B', unit: 'V'   },
+  { key: 'soc_pct',   label: 'SOC (%)',     color: '#8B5CF6', unit: '%'   },
+];
+
+const SessionMeterChart = ({ sessionId }: { sessionId: number }) => {
+  const [data, setData] = useState<MeterPoint[]>([]);
+  const [visibleSeries, setVisibleSeries] = useState({
+    power_kw: true, current_a: true, voltage_v: true, soc_pct: true
+  });
+
+  // Load historical data on mount
+  useEffect(() => {
+    loadHistoricalMeterValues(sessionId).then(points => setData(points));
+  }, [sessionId]);
+
+  // Append new points in real-time
+  useRealtimeMeterValues(sessionId, (newRow) => {
+    setData(prev => {
+      const point = transformRow(newRow, prev);  // merge measurands into single time-keyed object
+      const existingIdx = prev.findIndex(p => p.time === point.time);
+      if (existingIdx >= 0) {
+        // Same timestamp: merge measurands (Power row and Current row arrive separately)
+        const updated = [...prev];
+        updated[existingIdx] = { ...updated[existingIdx], ...point };
+        return updated;
+      }
+      return [...prev, point];
+    });
+  });
+
+  // Keep only last N points visible (sliding window of 50 points for performance)
+  const visibleData = data.slice(-50);
+
+  return (
+    <ResponsiveContainer width="100%" height={160}>
+      <LineChart data={visibleData} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
+        <XAxis
+          dataKey="time"
+          tick={{ fontSize: 10 }}
+          tickFormatter={(t) => t.slice(0, 5)}  // HH:mm only
+          interval="preserveStartEnd"
+        />
+        <YAxis
+          tick={{ fontSize: 10 }}
+          domain={[0, 'auto']}
+          width={30}
+        />
+        <Tooltip
+          formatter={(value, name) => {
+            const series = SERIES.find(s => s.key === name);
+            return [`${value} ${series?.unit}`, series?.label];
+          }}
+        />
+        <Legend
+          iconType="line"
+          iconSize={10}
+          wrapperStyle={{ fontSize: 10 }}
+          onClick={(e) => toggleSeries(e.dataKey)}  // click legend to show/hide series
+        />
+        {SERIES.map(s => (
+          <Line
+            key={s.key}
+            type="monotone"
+            dataKey={s.key}
+            stroke={s.color}
+            strokeWidth={1.5}
+            dot={false}          // no dots = cleaner for many points
+            isAnimationActive={false}  // CRITICAL: disable animation for real-time streaming
+            hide={!visibleSeries[s.key]}
+            connectNulls={true}  // connect across missing measurands
+          />
+        ))}
+      </LineChart>
+    </ResponsiveContainer>
+  );
+};
+```
+
+> **Critical:** `isAnimationActive={false}` on all lines — animation causes janky re-renders when new points stream in every second. Always disable for live data.
+
+#### 15.3A.4 Data Transformation (Merging Measurands)
+
+OCPP `MeterValues` sends each measurand as a separate row in our DB. The chart needs them merged by timestamp into a single object per time point:
+
+```typescript
+// Raw DB rows:
+// { recorded_at: '13:49:24', measurand: 'Power.Active.Import', value: 22.4 }
+// { recorded_at: '13:49:24', measurand: 'Voltage',             value: 380 }
+// { recorded_at: '13:49:24', measurand: 'Current.Import',      value: 32.1 }
+// { recorded_at: '13:49:24', measurand: 'SoC',                 value: 36 }
+
+// Transformed to single chart point:
+// { time: '13:49:24', power_kw: 22.4, voltage_v: 380, current_a: 32.1, soc_pct: 36 }
+
+const MEASURAND_MAP: Record<string, keyof MeterPoint> = {
+  'Power.Active.Import':             'power_kw',
+  'Energy.Active.Import.Register':   'energy_kwh',  // not charted, used elsewhere
+  'Current.Import':                  'current_a',
+  'Voltage':                         'voltage_v',
+  'SoC':                             'soc_pct',
+};
+
+function transformRows(rows: MeterValueRow[]): MeterPoint[] {
+  const byTime = new Map<string, MeterPoint>();
+
+  for (const row of rows) {
+    const timeKey = new Date(row.recorded_at).toLocaleTimeString('en-GB');
+    if (!byTime.has(timeKey)) {
+      byTime.set(timeKey, { time: timeKey, power_kw: null, current_a: null, voltage_v: null, soc_pct: null });
+    }
+    const field = MEASURAND_MAP[row.measurand];
+    if (field && field !== 'energy_kwh') {
+      const point = byTime.get(timeKey)!;
+      // Convert W → kW for power
+      (point as any)[field] = row.measurand === 'Power.Active.Import'
+        ? row.value / 1000
+        : row.value;
+    }
+  }
+
+  return Array.from(byTime.values());
+}
+```
+
+#### 15.3A.5 Full Connector Card Layout
+
+```typescript
+// src/components/monitor/ConnectorCard.tsx (full card with chart)
+
+const ConnectorCard = ({ connector, charger, session }: ConnectorCardProps) => {
+  const { formatEnergy, formatDuration } = useFormatters();
+  const [elapsed, setElapsed] = useState(0);
+
+  // Live duration counter (local JS timer)
+  useEffect(() => {
+    if (!session?.start_timestamp) return;
+    const update = () =>
+      setElapsed(Math.floor((Date.now() - new Date(session.start_timestamp).getTime()) / 1000));
+    update();
+    const t = setInterval(update, 1000);
+    return () => clearInterval(t);
+  }, [session?.start_timestamp]);
+
+  return (
+    <div className={`rounded-xl border-2 shadow-sm p-4 ${statusBorderColor(connector.status)}`}>
+
+      {/* Header */}
+      <div className="flex justify-between items-start mb-1">
+        <div>
+          <span className="font-bold text-sm">{connector.connector_type}</span>
+          <span className="text-xs text-gray-500 ml-2">{charger.charge_point_id}_{connector.connector_number}</span>
+        </div>
+        <div className="flex gap-2 text-gray-400">
+          <Pin size={14}/><Settings size={14}/><Maximize2 size={14}/>
+        </div>
+      </div>
+
+      <div className="text-xs text-gray-500 mb-1">Operator: {charger.operator?.name}</div>
+      <div className="text-xs text-gray-500 mb-3">Charging Station: {charger.station?.name}</div>
+
+      {/* Live Chart — only shown during active session */}
+      {session && connector.status === 'Charging' ? (
+        <SessionMeterChart sessionId={session.id} />
+      ) : (
+        <div className="h-40 flex items-center justify-center text-gray-300">
+          <div className="text-center">
+            <Search size={32} className="mx-auto mb-2"/>
+            <p className="text-xs">Not charging</p>
+          </div>
+        </div>
+      )}
+
+      {/* Session metadata */}
+      {session && (
+        <div className="grid grid-cols-3 gap-2 mt-3 text-xs text-gray-600 border-t pt-2">
+          <div>
+            <div className="font-medium text-gray-400">Start Time</div>
+            <div>{formatDateTime(session.start_timestamp)}</div>
+          </div>
+          <div>
+            <div className="font-medium text-gray-400">Duration</div>
+            <div className="font-mono">{formatDuration(elapsed)}</div>
+          </div>
+          <div>
+            <div className="font-medium text-gray-400">Energy</div>
+            <div className="font-bold text-blue-600">{formatEnergy(session.energy_consumed_wh)}</div>
+          </div>
+        </div>
+      )}
+
+      {/* Status + actions */}
+      <div className="flex items-center justify-between mt-3">
+        <StatusBadge status={connector.status} />
+        <div className="flex gap-2">
+          {connector.status === 'Charging' && (
+            <Button size="xs" variant="destructive" onClick={() => remoteStop(session.id)}>Stop</Button>
+          )}
+          <Button size="xs" variant="outline" onClick={() => remoteStart(connector)}>Start</Button>
+          <Button size="xs" variant="ghost" onClick={() => unlockConnector(connector)}>Unlock</Button>
+        </div>
+      </div>
+    </div>
+  );
+};
+```
+
+#### 15.3A.6 DB Index for Chart Performance
+
+```sql
+-- Fast load of historical meter values for a session's chart
+CREATE INDEX idx_meter_values_session_chart
+  ON meter_values (session_id, measurand, recorded_at ASC);
+
+-- Composite: covers the exact WHERE + ORDER BY the chart query uses
+-- session_id=X AND measurand IN (...) ORDER BY recorded_at ASC
+```
+
+#### 15.3A.7 Mobile Chart (Operator App)
+
+The Operator App shows the same chart in the session detail screen using `react-native-gifted-charts` (Expo-compatible alternative to Recharts):
+
+```typescript
+// apps/operator/src/screens/SessionDetailScreen.tsx
+import { LineChart } from 'react-native-gifted-charts';
+
+// Same data source, same Realtime subscription
+// Simplified: only Power and SOC on mobile (less clutter on small screen)
+// Tap data point → shows exact value in tooltip
+```
+
+#### 15.3A.8 Chart Variants
+
+| Variant | Where | Series Shown | Window |
+|---|---|---|---|
+| **Live Card Chart** | Monitor dashboard connector card | Power, Current, Voltage, SOC | Last 50 points (sliding) |
+| **Session Detail Chart** | Click on any session in history | All 4 + Energy | Full session |
+| **Station Overview** | Station detail page | Combined power across all connectors | Last 2 hours |
+| **Charger Health** | Charger detail page | Voltage stability over past 7 days | Daily aggregates |
+
+All variants share the same `SessionMeterChart` component with different `filter` and `window` props.
 
 ### 15.4 Dashboard KPI Auto-Refresh
 
