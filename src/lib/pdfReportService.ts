@@ -10,7 +10,7 @@ import { supabase } from './supabase';
 import { getAllSettings, SettingsMap } from './settingsService';
 import { formatJOD } from './billingService';
 import { amiriRegularBase64 } from '../fonts/amiri-regular';
-import { containsArabic, reshapeArabic } from './arabicReshaper';
+import { containsArabic, arabicTextToPng, rgbToHex } from './arabicReshaper';
 
 // ---- Shared branded header ----
 
@@ -22,33 +22,51 @@ function registerAmiriFont(doc: jsPDF) {
 
 /**
  * Renders a single line of text that may be Arabic, Latin, or mixed.
- * Arabic text is reshaped + right-aligned from the given x position.
- * Latin text is rendered at x with the current font.
+ *
+ * Arabic text is rendered via the browser's Canvas engine (which handles
+ * shaping, ligatures, and RTL direction natively) and embedded as a PNG
+ * image — right-aligned to `rightEdgeMm`.
+ *
+ * Latin text is rendered normally with jsPDF at position (x, y).
+ *
+ * @returns a Promise because Arabic rendering is async (canvas → PNG).
  */
-function renderText(
+async function renderText(
   doc: jsPDF,
   text: string,
   x: number,
   y: number,
-  opts: { fontSize?: number; fontStyle?: string; align?: 'left' | 'right'; rightEdge?: number } = {}
-): void {
-  const { fontSize = 9, fontStyle = 'normal', align = 'left', rightEdge } = opts;
+  opts: {
+    fontSize?: number;
+    fontStyle?: string;
+    align?: 'left' | 'right';
+    rightEdge?: number;
+    color?: [number, number, number];
+  } = {}
+): Promise<void> {
+  const { fontSize = 9, fontStyle = 'normal', align = 'left', rightEdge, color } = opts;
+  const pageW = doc.internal.pageSize.width;
+  const rx = rightEdge ?? (align === 'right' ? x : pageW - 14);
+  const cssColor = color ? rgbToHex(...color) : '#000000';
+
   doc.setFontSize(fontSize);
 
   if (containsArabic(text)) {
-    const shaped = reshapeArabic(text);
-    doc.setFont('Amiri', 'normal');
-    // Arabic text: right-align from rightEdge (or x when align='right')
-    const rx = rightEdge ?? (align === 'right' ? x : doc.internal.pageSize.width - 14);
-    doc.text(shaped, rx, y, { align: 'right', isInputVisual: true } as any);
-    doc.setFont('helvetica', fontStyle as any); // restore
-  } else {
-    doc.setFont('helvetica', fontStyle as any);
-    if (align === 'right') {
-      doc.text(text, x, y, { align: 'right' });
-    } else {
-      doc.text(text, x, y);
+    const img = await arabicTextToPng(text, fontSize, cssColor, rx - 14);
+    if (img) {
+      const xImg = img.xRight(rx);
+      const yImg = y - img.heightMm * 0.78;
+      doc.addImage(img.dataUrl, 'PNG', xImg, yImg, img.widthMm, img.heightMm);
+      return;
     }
+  }
+
+  // Latin fallback
+  doc.setFont('helvetica', fontStyle as any);
+  if (align === 'right') {
+    doc.text(text, rx, y, { align: 'right' });
+  } else {
+    doc.text(text, x, y);
   }
 }
 
@@ -109,11 +127,11 @@ async function addBrandedHeader(doc: jsPDF, title: string, subtitle?: string): P
   const textX = logoWidth > 0 ? 14 + logoWidth + 4 : 14;
   const companyName = s.company_name || 'EV Charging Station';
 
-  renderText(doc, companyName, textX, y, { fontSize: 16, fontStyle: 'bold' });
+  await renderText(doc, companyName, textX, y, { fontSize: 16, fontStyle: 'bold' });
   y += 6;
 
   if (s.company_address && s.show_company_address !== 'false') {
-    renderText(doc, s.company_address, textX, y, { fontSize: 8 });
+    await renderText(doc, s.company_address, textX, y, { fontSize: 8 });
     y += 4;
   }
   const contactParts: string[] = [];
@@ -155,20 +173,6 @@ async function addBrandedHeader(doc: jsPDF, title: string, subtitle?: string): P
 }
 
 
-/**
- * jspdf-autotable hook: reshapes Arabic cell content so table cells render
- * correctly. Add this to the `willDrawCell` option of every autoTable call
- * that might contain Arabic data (operator names, station names, notes).
- */
-function arabicTableCell(data: any): void {
-  if (data.section !== 'body' && data.section !== 'foot') return;
-  const raw: unknown = data.cell.raw;
-  if (typeof raw !== 'string' || !containsArabic(raw)) return;
-  // Replace the cell content with the shaped + reversed string
-  data.cell.text = [reshapeArabic(raw)];
-  data.cell.styles.font = 'Amiri';
-  data.cell.styles.halign = 'right';
-}
 
 function addFooter(doc: jsPDF, footerText?: string) {
   const pageCount = doc.getNumberOfPages();
@@ -400,7 +404,6 @@ export async function exportHandoverReportPDF(
         else if (val === 'pending') data.cell.styles.textColor = [245, 158, 11];
       }
     },
-    willDrawCell: arabicTableCell,
   });
 
   addFooter(doc, s.report_footer_text);
@@ -577,20 +580,19 @@ export async function generateShiftSessionReportPDF(
       5: { halign: 'right' },
     },
     margin: { left: 14, right: 14 },
-    willDrawCell: arabicTableCell,
   });
 
   // Payment breakdown collected from the operator at handover (Manual Shift
   // Cash Settlement) — Cash / CliQ / Card totals entered by the station manager.
   const afterTableY = (doc as any).lastAutoTable?.finalY ?? y;
-  addPaymentBreakdownSection(doc, afterTableY + 8, handover);
+  await addPaymentBreakdownSection(doc, afterTableY + 8, handover);
 
   addFooter(doc, s.report_footer_text);
   doc.save(`shift-session-report-${shift.shift_date}-${shift.shift_type}.pdf`);
 }
 
 /** Renders the Cash/CliQ/Card handover breakdown shared by both PDF reports. Returns the y position after the section. */
-function addPaymentBreakdownSection(doc: jsPDF, startY: number, handover?: HandoverPaymentSummary | null): number {
+async function addPaymentBreakdownSection(doc: jsPDF, startY: number, handover?: HandoverPaymentSummary | null): Promise<number> {
   let y = startY;
   const pageW = doc.internal.pageSize.width;
   const contentW = pageW - 28;
@@ -652,17 +654,22 @@ function addPaymentBreakdownSection(doc: jsPDF, startY: number, handover?: Hando
     if (handover.discrepancy_reason) {
       doc.setFontSize(8);
       doc.setTextColor(...textColor);
-      // Note may be Arabic — use reshaper-aware helper
       const noteText = handover.discrepancy_reason;
+      const noteY = y + 11;
+      const rightEdge = 14 + contentW - 4;
       if (containsArabic(noteText)) {
-        const shaped = reshapeArabic(noteText);
-        doc.setFont('Amiri', 'normal');
-        doc.text(shaped, 14 + contentW - 4, y + 11, { align: 'right', isInputVisual: true } as any);
-        doc.setFont('helvetica', 'normal');
+        // Render Arabic note via canvas — browser handles shaping/RTL natively
+        const img = await arabicTextToPng(noteText, 8, rgbToHex(...textColor), rightEdge - 14);
+        if (img) {
+          const xImg = img.xRight(rightEdge);
+          const yImg = noteY - img.heightMm * 0.78;
+          doc.addImage(img.dataUrl, 'PNG', xImg, yImg, img.widthMm, img.heightMm);
+        }
       } else {
         doc.setFont('helvetica', 'normal');
-        doc.text(`Note: ${noteText}`, 18, y + 11);
+        doc.text(`Note: ${noteText}`, 18, noteY);
       }
+      doc.setTextColor(0);
     }
     doc.setTextColor(0);
     y += boxHeight + 6;
@@ -719,12 +726,12 @@ export async function generateMoneyHandoverLetterPDF(
   doc.setFontSize(10);
   doc.setFont('helvetica', 'bold');
   doc.text('Station:', 20, y);
-  renderText(doc, stationName, 55, y, { fontSize: 10 });
+  await renderText(doc, stationName, 55, y, { fontSize: 10 });
   y += 6;
 
   doc.setFont('helvetica', 'bold');
   doc.text('Operator:', 20, y);
-  renderText(doc, operatorName, 55, y, { fontSize: 10 });
+  await renderText(doc, operatorName, 55, y, { fontSize: 10 });
   y += 6;
 
   doc.setFont('helvetica', 'bold');
@@ -773,7 +780,7 @@ export async function generateMoneyHandoverLetterPDF(
 
   // Payment breakdown collected from the operator (Cash/CliQ/Card entered at
   // handover) — how much was collected via each method.
-  y = addPaymentBreakdownSection(doc, y, handover);
+  y = await addPaymentBreakdownSection(doc, y, handover);
   y += 4;
 
   // Signature lines
