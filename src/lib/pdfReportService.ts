@@ -10,18 +10,46 @@ import { supabase } from './supabase';
 import { getAllSettings, SettingsMap } from './settingsService';
 import { formatJOD } from './billingService';
 import { amiriRegularBase64 } from '../fonts/amiri-regular';
+import { containsArabic, reshapeArabic } from './arabicReshaper';
 
 // ---- Shared branded header ----
-
-/** Check if text contains Arabic characters */
-function containsArabic(text: string): boolean {
-  return /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(text);
-}
 
 /** Register the Amiri Arabic font in a jsPDF instance */
 function registerAmiriFont(doc: jsPDF) {
   doc.addFileToVFS('Amiri-Regular.ttf', amiriRegularBase64);
   doc.addFont('Amiri-Regular.ttf', 'Amiri', 'normal');
+}
+
+/**
+ * Renders a single line of text that may be Arabic, Latin, or mixed.
+ * Arabic text is reshaped + right-aligned from the given x position.
+ * Latin text is rendered at x with the current font.
+ */
+function renderText(
+  doc: jsPDF,
+  text: string,
+  x: number,
+  y: number,
+  opts: { fontSize?: number; fontStyle?: string; align?: 'left' | 'right'; rightEdge?: number } = {}
+): void {
+  const { fontSize = 9, fontStyle = 'normal', align = 'left', rightEdge } = opts;
+  doc.setFontSize(fontSize);
+
+  if (containsArabic(text)) {
+    const shaped = reshapeArabic(text);
+    doc.setFont('Amiri', 'normal');
+    // Arabic text: right-align from rightEdge (or x when align='right')
+    const rx = rightEdge ?? (align === 'right' ? x : doc.internal.pageSize.width - 14);
+    doc.text(shaped, rx, y, { align: 'right', isInputVisual: true } as any);
+    doc.setFont('helvetica', fontStyle as any); // restore
+  } else {
+    doc.setFont('helvetica', fontStyle as any);
+    if (align === 'right') {
+      doc.text(text, x, y, { align: 'right' });
+    } else {
+      doc.text(text, x, y);
+    }
+  }
 }
 
 async function getSettings(): Promise<SettingsMap> {
@@ -81,22 +109,11 @@ async function addBrandedHeader(doc: jsPDF, title: string, subtitle?: string): P
   const textX = logoWidth > 0 ? 14 + logoWidth + 4 : 14;
   const companyName = s.company_name || 'EV Charging Station';
 
-  // Use Amiri font for Arabic text, Helvetica for Latin text
-  if (containsArabic(companyName)) {
-    doc.setFontSize(16);
-    doc.setFont('Amiri', 'normal');
-    doc.text(companyName, textX, y);
-  } else {
-    doc.setFontSize(16);
-    doc.setFont('helvetica', 'bold');
-    doc.text(companyName, textX, y);
-  }
+  renderText(doc, companyName, textX, y, { fontSize: 16, fontStyle: 'bold' });
   y += 6;
 
   if (s.company_address && s.show_company_address !== 'false') {
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'normal');
-    doc.text(s.company_address, textX, y);
+    renderText(doc, s.company_address, textX, y, { fontSize: 8 });
     y += 4;
   }
   const contactParts: string[] = [];
@@ -137,6 +154,21 @@ async function addBrandedHeader(doc: jsPDF, title: string, subtitle?: string): P
   return y;
 }
 
+
+/**
+ * jspdf-autotable hook: reshapes Arabic cell content so table cells render
+ * correctly. Add this to the `willDrawCell` option of every autoTable call
+ * that might contain Arabic data (operator names, station names, notes).
+ */
+function arabicTableCell(data: any): void {
+  if (data.section !== 'body' && data.section !== 'foot') return;
+  const raw: unknown = data.cell.raw;
+  if (typeof raw !== 'string' || !containsArabic(raw)) return;
+  // Replace the cell content with the shaped + reversed string
+  data.cell.text = [reshapeArabic(raw)];
+  data.cell.styles.font = 'Amiri';
+  data.cell.styles.halign = 'right';
+}
 
 function addFooter(doc: jsPDF, footerText?: string) {
   const pageCount = doc.getNumberOfPages();
@@ -359,8 +391,8 @@ export async function exportHandoverReportPDF(
     headStyles: { fillColor: [30, 58, 138], textColor: 255, fontStyle: 'bold' },
     alternateRowStyles: { fillColor: [245, 247, 250] },
     margin: { left: 14, right: 14 },
-    // Color-code status cells
     didParseCell: (data: any) => {
+      // Color-code status column
       if (data.section === 'body' && data.column.index === 5) {
         const val = data.cell.raw;
         if (val === 'handed_over') data.cell.styles.textColor = [16, 185, 129];
@@ -368,6 +400,7 @@ export async function exportHandoverReportPDF(
         else if (val === 'pending') data.cell.styles.textColor = [245, 158, 11];
       }
     },
+    willDrawCell: arabicTableCell,
   });
 
   addFooter(doc, s.report_footer_text);
@@ -544,6 +577,7 @@ export async function generateShiftSessionReportPDF(
       5: { halign: 'right' },
     },
     margin: { left: 14, right: 14 },
+    willDrawCell: arabicTableCell,
   });
 
   // Payment breakdown collected from the operator at handover (Manual Shift
@@ -617,8 +651,18 @@ function addPaymentBreakdownSection(doc: jsPDF, startY: number, handover?: Hando
     doc.text(label, 18, y + 6);
     if (handover.discrepancy_reason) {
       doc.setFontSize(8);
-      doc.setFont('helvetica', 'normal');
-      doc.text(`Note: ${handover.discrepancy_reason}`, 18, y + 11);
+      doc.setTextColor(...textColor);
+      // Note may be Arabic — use reshaper-aware helper
+      const noteText = handover.discrepancy_reason;
+      if (containsArabic(noteText)) {
+        const shaped = reshapeArabic(noteText);
+        doc.setFont('Amiri', 'normal');
+        doc.text(shaped, 14 + contentW - 4, y + 11, { align: 'right', isInputVisual: true } as any);
+        doc.setFont('helvetica', 'normal');
+      } else {
+        doc.setFont('helvetica', 'normal');
+        doc.text(`Note: ${noteText}`, 18, y + 11);
+      }
     }
     doc.setTextColor(0);
     y += boxHeight + 6;
@@ -675,14 +719,12 @@ export async function generateMoneyHandoverLetterPDF(
   doc.setFontSize(10);
   doc.setFont('helvetica', 'bold');
   doc.text('Station:', 20, y);
-  doc.setFont('helvetica', 'normal');
-  doc.text(stationName, 55, y);
+  renderText(doc, stationName, 55, y, { fontSize: 10 });
   y += 6;
 
   doc.setFont('helvetica', 'bold');
   doc.text('Operator:', 20, y);
-  doc.setFont('helvetica', 'normal');
-  doc.text(operatorName, 55, y);
+  renderText(doc, operatorName, 55, y, { fontSize: 10 });
   y += 6;
 
   doc.setFont('helvetica', 'bold');
